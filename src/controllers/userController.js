@@ -6,6 +6,22 @@
 const User = require("../models/User");
 
 // ------------------------------------------
+// @desc    عرض قايمة الحلاقين المتاحين (Public) - العميل يحتاجها وقت اختيار الحلاق في صفحة الحجز
+// @route   GET /api/users/employees
+// بنرجع بيانات محدودة بس (الاسم، التخصصات، ساعات العمل) من غير أي بيانات حساسة
+// ------------------------------------------
+const getPublicEmployees = async (req, res, next) => {
+  try {
+    const employees = await User.find({ role: "employee", isActive: true }).select(
+      "name specialties workingHours"
+    );
+    res.status(200).json(employees);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ------------------------------------------
 // @desc    عرض كل الموظفين
 // @route   GET /api/users
 // ------------------------------------------
@@ -87,4 +103,4 @@ const deactivateUser = async (req, res, next) => {
   }
 };
 
-module.exports = { getUsers, getUserById, updateUser, deactivateUser };
+module.exports = { getUsers, getUserById, updateUser, deactivateUser, getPublicEmployees };

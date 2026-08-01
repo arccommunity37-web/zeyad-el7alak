@@ -4,9 +4,18 @@
 
 const express = require("express");
 const router = express.Router();
-const { getUsers, getUserById, updateUser, deactivateUser } = require("../controllers/userController");
+const {
+  getUsers,
+  getUserById,
+  updateUser,
+  deactivateUser,
+  getPublicEmployees,
+} = require("../controllers/userController");
 const { protect } = require("../middlewares/authMiddleware");
 const { authorize } = require("../middlewares/roleMiddleware");
+
+// راوت عام (Public) - لازم يتحط قبل "/" وقبل "/:id" عشان إكسبريس ميفهمهاش كـ id
+router.get("/employees", getPublicEmployees);
 
 // كل الراوتس هنا محتاجة: 1) تسجيل دخول (protect) 2) يكون أدمن (authorize("admin"))
 router.get("/", protect, authorize("admin"), getUsers);
