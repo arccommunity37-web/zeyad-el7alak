@@ -76,8 +76,10 @@ const login = async (req, res, next) => {
     const { identifier, password } = req.body;
 
     // بندور الأول في جدول المستخدمين (أدمن/موظف) بالإيميل
+    // بنحول اللي المستخدم كتبه لحروف صغيرة عشان "Admin" و"admin" يتعاملوا كإيميل واحد
+    // (لأن الموديل بيخزن الإيميل بحروف صغيرة تلقائيًا)
     // بنستخدم select("+password") عشان الباسورد أصلًا معمول عليه select: false في الموديل
-    let account = await User.findOne({ email: identifier }).select("+password");
+    let account = await User.findOne({ email: identifier.toLowerCase() }).select("+password");
     let userType = "user";
 
     // لو ملقيناش، بندور في جدول العملاء بالتليفون
