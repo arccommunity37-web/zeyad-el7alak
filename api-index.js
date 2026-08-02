@@ -13,11 +13,18 @@ const connectDB = require("../src/config/db");
 let isConnected = false;
 
 module.exports = async (req, res) => {
-  if (!isConnected) {
-    await connectDB();
-    isConnected = true;
-  }
+  try {
+    if (!isConnected) {
+      await connectDB();
+      isConnected = true;
+    }
 
-  // بعد ما نتأكد إن قاعدة البيانات متوصلة، بنسيب تطبيق Express العادي يتعامل مع الطلب
-  return app(req, res);
+    // بعد ما نتأكد إن قاعدة البيانات متوصلة، بنسيب تطبيق Express العادي يتعامل مع الطلب
+    return app(req, res);
+  } catch (error) {
+    // لو الاتصال بقاعدة البيانات فشل، بنرجع رسالة خطأ واضحة بدل ما الطلب يفضل معلق
+    // (مهم جدًا في Serverless: هنا ممنوع نستخدم process.exit خالص)
+    console.error("❌ فشل الاتصال بقاعدة البيانات:", error.message);
+    res.status(500).json({ message: "فشل الاتصال بقاعدة البيانات، تأكد من MONGO_URI وإعدادات الشبكة" });
+  }
 };
