@@ -1,20 +1,25 @@
 // ==========================================
-// الكنترولر ده مسؤول عن حجز المنتجات من قبل العميل
-// الفكرة: العميل بيحجز كمية من منتج، الكمية دي بتتخصم من المعروض فورًا
-// (عشان محدش يحجز نفس القطعة مرتين)، ولو العميل ماجاش يستلم في الميعاد، الحجز بيتلغي والكمية ترجع
+// الكنترولر ده مسؤول عن حجز المنتجات - بالاسم والتليفون بس، من غير تسجيل دخول
 // ==========================================
 
 const ProductReservation = require("../models/ProductReservation");
 const Product = require("../models/Product");
+const Customer = require("../models/Customer");
 const StockMovement = require("../models/StockMovement");
 
 // ------------------------------------------
-// @desc    العميل بيحجز منتج معين
+// @desc    العميل بيحجز منتج معين - Public
 // @route   POST /api/product-reservations
+// body المتوقع: { customerName, customerPhone, product, quantity, reservedUntil }
 // ------------------------------------------
 const createReservation = async (req, res, next) => {
   try {
-    const { product: productId, quantity, reservedUntil } = req.body;
+    const { customerName, customerPhone, product: productId, quantity, reservedUntil } = req.body;
+
+    if (!customerName || !customerPhone) {
+      res.status(400);
+      return next(new Error("الاسم ورقم التليفون مطلوبين"));
+    }
 
     const product = await Product.findById(productId);
     if (!product) {
@@ -22,13 +27,11 @@ const createReservation = async (req, res, next) => {
       return next(new Error("المنتج غير موجود"));
     }
 
-    // نتأكد إن المنتج ده أصلاً مسموح يتحجز مقدمًا
     if (!product.isAvailableForCustomerReservation) {
       res.status(400);
       return next(new Error("المنتج ده مش متاح للحجز المسبق"));
     }
 
-    // ✋ أهم خطوة: نتأكد إن الكمية المطلوبة متاحة فعلاً في المخزون
     if (product.quantityInStock < quantity) {
       res.status(400);
       return next(
@@ -36,12 +39,21 @@ const createReservation = async (req, res, next) => {
       );
     }
 
-    // بنخصم الكمية فورًا من المعروض عشان "نحجزها" لحد ما العميل ييجي يستلم
+    // بندور على العميل برقم تليفونه، ولو مش موجود بننشئه دلوقتي
+    let customer = await Customer.findOne({ phone: customerPhone });
+    if (!customer) {
+      customer = await Customer.create({ name: customerName, phone: customerPhone });
+    } else if (customer.name !== customerName) {
+      customer.name = customerName;
+      await customer.save();
+    }
+
+    // بنخصم الكمية فورًا عشان "نحجزها"
     product.quantityInStock -= quantity;
     await product.save();
 
     const reservation = await ProductReservation.create({
-      customer: req.user._id, // لازم يكون عميل مسجل دخول
+      customer: customer._id,
       product: productId,
       quantity,
       reservedUntil,
@@ -54,7 +66,7 @@ const createReservation = async (req, res, next) => {
 };
 
 // ------------------------------------------
-// @desc    عرض كل حجوزات المنتجات (Admin/Employee)
+// @desc    عرض كل حجوزات المنتجات - أدمن بس
 // @route   GET /api/product-reservations
 // ------------------------------------------
 const getReservations = async (req, res, next) => {
@@ -71,12 +83,24 @@ const getReservations = async (req, res, next) => {
 };
 
 // ------------------------------------------
-// @desc    عرض حجوزات العميل الحالي بس
-// @route   GET /api/product-reservations/my
+// @desc    العميل بيشوف حجوزاته برقم تليفونه بس - Public
+// @route   GET /api/product-reservations/lookup?phone=xxxxxxxxxx
 // ------------------------------------------
-const getMyReservations = async (req, res, next) => {
+const lookupReservationsByPhone = async (req, res, next) => {
   try {
-    const reservations = await ProductReservation.find({ customer: req.user._id })
+    const { phone } = req.query;
+
+    if (!phone) {
+      res.status(400);
+      return next(new Error("رقم التليفون مطلوب"));
+    }
+
+    const customer = await Customer.findOne({ phone });
+    if (!customer) {
+      return res.status(200).json([]);
+    }
+
+    const reservations = await ProductReservation.find({ customer: customer._id })
       .populate("product", "name sellingPrice image")
       .sort({ createdAt: -1 });
 
@@ -87,12 +111,12 @@ const getMyReservations = async (req, res, next) => {
 };
 
 // ------------------------------------------
-// @desc    تحديث حالة الحجز (تأكيد / استلام / إلغاء)
+// @desc    تحديث حالة الحجز (تأكيد/استلام/إلغاء) - أدمن بس
 // @route   PUT /api/product-reservations/:id/status
 // ------------------------------------------
 const updateReservationStatus = async (req, res, next) => {
   try {
-    const { status } = req.body; // القيمة المتوقعة: confirmed | picked_up | cancelled
+    const { status } = req.body;
 
     const reservation = await ProductReservation.findById(req.params.id);
     if (!reservation) {
@@ -100,7 +124,6 @@ const updateReservationStatus = async (req, res, next) => {
       return next(new Error("الحجز غير موجود"));
     }
 
-    // لو الأدمن/الموظف عايز يلغي الحجز، لازم نرجع الكمية للمخزون تاني
     if (status === "cancelled" && reservation.status !== "cancelled") {
       const product = await Product.findById(reservation.product);
       if (product) {
@@ -109,7 +132,6 @@ const updateReservationStatus = async (req, res, next) => {
       }
     }
 
-    // لو العميل استلم المنتج فعليًا، بنسجل حركة "خروج" نهائية في سجل المخزون
     if (status === "picked_up") {
       await StockMovement.create({
         product: reservation.product,
@@ -128,21 +150,16 @@ const updateReservationStatus = async (req, res, next) => {
   }
 };
 
-// ------------------------------------------
-// دالة مصدّرة (مش endpoint) هيستخدمها node-cron عشان يلغي الحجوزات اللي فاتت مهلتها تلقائيًا
-// شايفينها هنا وهنستدعيها من ملف منفصل لجدولة التشغيل (cron job)
-// ------------------------------------------
+// دالة يستخدمها node-cron/Vercel Cron لإلغاء الحجوزات المنتهية تلقائيًا
 const cancelExpiredReservations = async () => {
   const now = new Date();
 
-  // بندور على أي حجز لسه pending أو confirmed بس فات ميعاد استلامه
   const expiredReservations = await ProductReservation.find({
     status: { $in: ["pending", "confirmed"] },
     reservedUntil: { $lt: now },
   });
 
   for (const reservation of expiredReservations) {
-    // بنرجع الكمية للمخزون
     const product = await Product.findById(reservation.product);
     if (product) {
       product.quantityInStock += reservation.quantity;
@@ -160,7 +177,7 @@ const cancelExpiredReservations = async () => {
 module.exports = {
   createReservation,
   getReservations,
-  getMyReservations,
+  lookupReservationsByPhone,
   updateReservationStatus,
   cancelExpiredReservations,
 };

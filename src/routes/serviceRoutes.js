@@ -1,5 +1,5 @@
 // ==========================================
-// راوتس الخدمات: العرض متاح للجميع، الإضافة/التعديل/الحذف للأدمن بس
+// راوتس الخدمات: العرض Public، الإضافة/التعديل/الحذف أدمن بس
 // ==========================================
 
 const express = require("express");
@@ -11,14 +11,11 @@ const {
   deleteService,
 } = require("../controllers/serviceController");
 const { protect } = require("../middlewares/authMiddleware");
-const { authorize } = require("../middlewares/roleMiddleware");
 
-// عرض الخدمات - Public، مفيش داعي لـ protect هنا عشان العميل يقدر يشوفها قبل ما يسجل دخول
-router.get("/", getServices);
+router.get("/", getServices); // Public
 
-// الإضافة والتعديل والحذف - أدمن بس
-router.post("/", protect, authorize("admin"), createService);
-router.put("/:id", protect, authorize("admin"), updateService);
-router.delete("/:id", protect, authorize("admin"), deleteService);
+router.post("/", protect, createService);
+router.put("/:id", protect, updateService);
+router.delete("/:id", protect, deleteService);
 
 module.exports = router;

@@ -15,7 +15,8 @@ const StockMovement = require("../models/StockMovement");
 // ------------------------------------------
 const createSale = async (req, res, next) => {
   try {
-    const { customer, items } = req.body;
+    const { customer, items, employee } = req.body;
+    // employee هنا اختياري: الأدمن هو اللي بيسجل الفاتورة، وممكن يحدد أي حلاق نفذ الخدمة فعليًا
 
     if (!items || items.length === 0) {
       res.status(400);
@@ -92,7 +93,7 @@ const createSale = async (req, res, next) => {
 
     const sale = await Sale.create({
       customer: customer || null,
-      employee: req.user._id, // الموظف اللي مسجل دخول وبيعمل عملية البيع
+      employee: employee || null, // الحلاق اللي نفذ الخدمة (اختياري - الأدمن بيحدده يدويًا)
       items: processedItems,
       totalAmount,
       paymentMethod: "cash",

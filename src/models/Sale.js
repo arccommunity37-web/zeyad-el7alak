@@ -51,7 +51,7 @@ const saleSchema = new mongoose.Schema(
     employee: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: [true, "لازم تحدد الموظف اللي نفذ عملية البيع"],
+      // اختياري: الأدمن هو اللي بيسجل الفاتورة، ويقدر يحدد أي حلاق نفذ الخدمة (أو يسيبها فاضية)
     },
     items: {
       type: [saleItemSchema],

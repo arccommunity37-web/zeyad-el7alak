@@ -1,11 +1,10 @@
 // ==========================================
-// موديل Customer: بيمثل العميل اللي بيحجز مواعيد أو منتجات
-// ملحوظة: العميل ممكن يسجل بإيميل وباسورد، أو ممكن نسمحله يحجز كـ "زائر" برقم تليفون بس
-// (القرار ده بتاعك، هنا الموديل بيدعم الحالتين)
+// موديل Customer: بيمثل العميل اللي بيطلب خدمة أو يحجز منتج
+// مفيش تسجيل دخول للعميل خالص - بيتعرف عليه بس بالاسم ورقم التليفون
+// أي عميل بيبعت نفس رقم التليفون تاني، بنستخدم نفس السجل بتاعه (منحدثش الاسم لو اتغير كتابته شوية)
 // ==========================================
 
 const mongoose = require("mongoose");
-const bcrypt = require("bcryptjs");
 
 const customerSchema = new mongoose.Schema(
   {
@@ -17,41 +16,13 @@ const customerSchema = new mongoose.Schema(
     phone: {
       type: String,
       required: [true, "رقم التليفون مطلوب"],
-      unique: true, // كل عميل ليه رقم تليفون مختلف، وده اللي بنميّزه بيه
-    },
-    email: {
-      type: String,
-      lowercase: true,
+      unique: true, // رقم التليفون هو المعرّف الوحيد للعميل - بيه بس بيقدر يشوف طلباته
       trim: true,
-      // مش required عشان نسمح بحجز كـ زائر بدون إيميل
-    },
-    password: {
-      type: String,
-      minlength: 6,
-      select: false,
-      // مش required برضو، لأن العميل ممكن يستخدم الموقع بدون تسجيل دخول كامل
     },
   },
   {
     timestamps: true,
   }
 );
-
-// نفس فكرة تشفير الباسورد اللي عملناها في موديل User
-customerSchema.pre("save", async function (next) {
-  // لو مفيش باسورد أصلاً (عميل زائر) أو الباسورد ماتغيرش، منعملش حاجة
-  if (!this.password || !this.isModified("password")) {
-    return next();
-  }
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-  next();
-});
-
-// دالة لمقارنة الباسورد وقت تسجيل الدخول
-customerSchema.methods.comparePassword = async function (enteredPassword) {
-  if (!this.password) return false; // عميل زائر مفهوش باسورد أصلاً
-  return await bcrypt.compare(enteredPassword, this.password);
-};
 
 module.exports = mongoose.model("Customer", customerSchema);

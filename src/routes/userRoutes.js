@@ -1,5 +1,5 @@
 // ==========================================
-// راوتس إدارة الموظفين - كلها محمية ومحتاجة تسجيل دخول + صلاحية admin
+// راوتس إدارة الحلاقين - الإدارة أدمن بس، عرض القايمة العامة Public
 // ==========================================
 
 const express = require("express");
@@ -12,15 +12,13 @@ const {
   getPublicEmployees,
 } = require("../controllers/userController");
 const { protect } = require("../middlewares/authMiddleware");
-const { authorize } = require("../middlewares/roleMiddleware");
 
-// راوت عام (Public) - لازم يتحط قبل "/" وقبل "/:id" عشان إكسبريس ميفهمهاش كـ id
+// راوت عام (Public) - العميل محتاجه عشان يختار حلاق وقت الحجز
 router.get("/employees", getPublicEmployees);
 
-// كل الراوتس هنا محتاجة: 1) تسجيل دخول (protect) 2) يكون أدمن (authorize("admin"))
-router.get("/", protect, authorize("admin"), getUsers);
-router.get("/:id", protect, authorize("admin"), getUserById);
-router.put("/:id", protect, authorize("admin"), updateUser);
-router.delete("/:id", protect, authorize("admin"), deactivateUser);
+router.get("/", protect, getUsers);
+router.get("/:id", protect, getUserById);
+router.put("/:id", protect, updateUser);
+router.delete("/:id", protect, deactivateUser);
 
 module.exports = router;

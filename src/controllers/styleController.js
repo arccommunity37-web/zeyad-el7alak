@@ -73,7 +73,7 @@ const createStyle = async (req, res, next) => {
       title,
       relatedService: relatedService || null,
       images: uploadedImages,
-      addedBy: req.user._id, // اللي مسجل دخول حاليًا (الحلاق أو الأدمن)
+      addedBy: req.user._id, // الأدمن اللي مسجل دخول وضاف القصة دي
     });
 
     res.status(201).json(style);

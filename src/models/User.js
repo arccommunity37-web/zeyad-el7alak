@@ -1,24 +1,24 @@
 // ==========================================
 // موديل User: بيمثل صاحب المحل (admin) أو الحلاق/الموظف (employee)
-// العميل (Customer) ليه موديل منفصل تحت اسم Customer.js
+// مهم: تسجيل الدخول الفعلي متاح للأدمن بس. الحلاقين بيتحطوا كبيانات بس (الأدمن هو اللي بيضيفهم)
+// عشان كده الباسورد بقى اختياري - الحلاق ممكن يتعمله بدون باسورد لأنه أصلاً مش هيسجل دخول أبدًا
 // ==========================================
 
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
-// بنعرف شكل البيانات (Schema) بتاعة المستخدم
 const userSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: [true, "الاسم مطلوب"], // لازم يتبعت اسم وإلا هيرفض الحفظ
-      trim: true, // بيشيل أي مسافات زيادة في الأول والآخر
+      required: [true, "الاسم مطلوب"],
+      trim: true,
     },
     email: {
       type: String,
-      required: [true, "البريد الإلكتروني مطلوب"],
-      unique: true, // مينفعش يتكرر نفس الإيميل لمستخدمين مختلفين
-      lowercase: true, // بيحول الإيميل لحروف صغيرة تلقائيًا عشان نتجنب مشاكل التكرار
+      required: [true, "البريد الإلكتروني مطلوب"], // بيستخدمه الأدمن كـ يوزر نيم لتسجيل الدخول
+      unique: true,
+      lowercase: true,
       trim: true,
     },
     phone: {
@@ -27,57 +27,48 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: [true, "كلمة المرور مطلوبة"],
-      minlength: 6, // أقل حاجة 6 حروف/أرقام
-      select: false, // معناها إن الباسورد مش هيترجع تلقائيًا في أي query إلا لو طلبناه بوضوح
+      minlength: 6,
+      select: false,
+      // ملحوظة: الباسورد بقى اختياري (مش required) عشان نقدر نضيف حلاقين (employee)
+      // من غير ما نجبرهم يبقى ليهم باسورد، لأنهم أصلاً مش هيسجلوا دخول أبدًا
     },
     role: {
       type: String,
-      enum: ["admin", "employee"], // مفيش قيمة تالتة مسموح بيها
+      enum: ["admin", "employee"],
       default: "employee",
     },
     specialties: {
-      type: [String], // مصفوفة نصوص - يعني الخدمات اللي الحلاق شاطر فيها
+      type: [String],
       default: [],
     },
     workingHours: {
-      from: { type: String, default: "10:00" }, // معاد بداية الشغل
-      to: { type: String, default: "22:00" }, // معاد نهاية الشغل
-      daysOff: { type: [String], default: [] }, // أيام الإجازة الأسبوعية (مثلاً ["Friday"])
+      from: { type: String, default: "10:00" },
+      to: { type: String, default: "22:00" },
+      daysOff: { type: [String], default: [] },
     },
     isActive: {
       type: Boolean,
-      default: true, // لو الأدمن عطّل موظف، بيبقى false بدل ما نحذفه نهائي
+      default: true,
     },
   },
   {
-    timestamps: true, // بيضيف تلقائيًا createdAt و updatedAt
+    timestamps: true,
   }
 );
 
-// ==========================================
-// Middleware (Hook) بيشتغل تلقائيًا "قبل" ما نحفظ أي مستخدم (pre-save)
-// وظيفته: تشفير كلمة المرور قبل ما تتخزن في قاعدة البيانات
-// ==========================================
+// تشفير الباسورد قبل الحفظ - بس لو فيه باسورد أصلاً (الحلاق ممكن يتعمله من غيره)
 userSchema.pre("save", async function (next) {
-  // لو الباسورد ماتغيرش (يعني بنعمل تعديل في بيانات تانية بس مش الباسورد)
-  // متعملش تشفير تاني عشان متبوظش الباسورد الأصلي
-  if (!this.isModified("password")) {
+  if (!this.password || !this.isModified("password")) {
     return next();
   }
-
-  // بنعمل "ملح" (salt) عشوائي، وده بيخلي التشفير أقوى وأصعب في الاختراق
   const salt = await bcrypt.genSalt(10);
-  // بنشفر الباسورد فعليًا ونستبدله بالنسخة المشفرة
   this.password = await bcrypt.hash(this.password, salt);
   next();
 });
 
-// ==========================================
-// دالة مساعدة (Method) بنضيفها على كل مستخدم عشان نقارن الباسورد وقت تسجيل الدخول
-// بتاخد الباسورد اللي المستخدم كتبه وتقارنه بالمشفر المخزن في الداتا بيز
-// ==========================================
+// مقارنة الباسورد وقت تسجيل الدخول (مستخدمة للأدمن بس فعليًا)
 userSchema.methods.comparePassword = async function (enteredPassword) {
+  if (!this.password) return false; // لو مفيش باسورد أصلاً (حلاق)، مينفعش يسجل دخول خالص
   return await bcrypt.compare(enteredPassword, this.password);
 };
 

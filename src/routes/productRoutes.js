@@ -1,5 +1,5 @@
 // ==========================================
-// راوتس المنتجات والمخزون - أدمن بس هو اللي يقدر يضيف/يعدل، العرض متاح لأي مسجل دخول
+// راوتس المنتجات والمخزون - العرض Public، الإدارة أدمن بس
 // ==========================================
 
 const express = require("express");
@@ -13,19 +13,14 @@ const {
   getLowStockProducts,
 } = require("../controllers/productController");
 const { protect } = require("../middlewares/authMiddleware");
-const { authorize } = require("../middlewares/roleMiddleware");
 const upload = require("../middlewares/uploadMiddleware");
 
-// مهم: "low-stock" لازم يتحط قبل "/:id" عشان مايتفسرش غلط كـ id
-router.get("/low-stock", protect, authorize("admin", "employee"), getLowStockProducts);
+router.get("/low-stock", protect, getLowStockProducts);
+router.get("/", getProducts); // Public - العميل يشوف المنتجات من غير تسجيل دخول
 
-router.get("/", protect, getProducts);
-
-// upload.single("image") يعني: استقبل ملف واحد بس في حقل اسمه "image"
-router.post("/", protect, authorize("admin"), upload.single("image"), createProduct);
-
-router.put("/:id", protect, authorize("admin"), updateProduct);
-router.post("/:id/image", protect, authorize("admin"), upload.single("image"), updateProductImage);
-router.post("/:id/stock-in", protect, authorize("admin"), stockIn);
+router.post("/", protect, upload.single("image"), createProduct);
+router.put("/:id", protect, updateProduct);
+router.post("/:id/image", protect, upload.single("image"), updateProductImage);
+router.post("/:id/stock-in", protect, stockIn);
 
 module.exports = router;

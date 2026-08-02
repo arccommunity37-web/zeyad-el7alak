@@ -1,5 +1,6 @@
 // ==========================================
-// راوتس حجز المنتجات من قبل العميل
+// راوتس حجز المنتجات: الحجز والاستعلام Public (بالاسم والتليفون)
+// عرض كل الحجوزات وتحديث حالتها للأدمن بس
 // ==========================================
 
 const express = require("express");
@@ -7,17 +8,15 @@ const router = express.Router();
 const {
   createReservation,
   getReservations,
-  getMyReservations,
+  lookupReservationsByPhone,
   updateReservationStatus,
 } = require("../controllers/reservationController");
 const { protect } = require("../middlewares/authMiddleware");
-const { authorize } = require("../middlewares/roleMiddleware");
 
-// مهم: "my" لازم يتحط قبل أي راوت بيستخدم "/:id" لنفس السبب اللي فات
-router.get("/my", protect, getMyReservations);
+router.get("/lookup", lookupReservationsByPhone); // Public
 
-router.post("/", protect, createReservation); // أي عميل مسجل دخول يقدر يحجز
-router.get("/", protect, authorize("admin", "employee"), getReservations);
-router.put("/:id/status", protect, authorize("admin", "employee"), updateReservationStatus);
+router.post("/", createReservation); // Public
+router.get("/", protect, getReservations); // أدمن بس
+router.put("/:id/status", protect, updateReservationStatus); // أدمن بس
 
 module.exports = router;
