@@ -1,235 +1,188 @@
 // ==========================================
-// الكنترولر ده مسؤول عن المنتجات والمخزون: إضافة/تعديل منتج، رفع صورته،
-// إضافة كمية جديدة (stock-in)، وعرض المنتجات اللي قربت تخلص
+// الكنترولر ده مسؤول عن الحجوزات - نظام "يوم + دور" مش وقت محدد
+// العميل بيختار يوم وحلاق، والنظام بيدّيه رقم دوره تلقائيًا (turn)
 // ==========================================
 
-const stream = require("stream");
-const Product = require("../models/Product");
-const StockMovement = require("../models/StockMovement");
-const cloudinary = require("../config/cloudinary");
-
-// دالة رفع الصورة - نفس الفكرة المستخدمة في styleController
-const uploadBufferToCloudinary = (buffer, folder) => {
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream({ folder }, (error, result) => {
-      if (error) return reject(error);
-      resolve(result);
-    });
-    const bufferStream = new stream.PassThrough();
-    bufferStream.end(buffer);
-    bufferStream.pipe(uploadStream);
-  });
-};
+const Booking = require("../models/Booking");
+const Service = require("../models/Service");
+const Customer = require("../models/Customer");
 
 // ------------------------------------------
-// @desc    عرض كل المنتجات
-// @route   GET /api/products
+// @desc    إنشاء حجز جديد - Public، من غير تسجيل دخول خالص
+// @route   POST /api/bookings
+// body المتوقع: { customerName, customerPhone, employee, services, date, notes }
 // ------------------------------------------
-const getProducts = async (req, res, next) => {
+const createBooking = async (req, res, next) => {
   try {
-    const products = await Product.find({});
-    res.status(200).json(products);
-  } catch (error) {
-    next(error);
-  }
-};
+    const { customerName, customerPhone, employee, services, date, notes } = req.body;
 
-// ------------------------------------------
-// @desc    إضافة منتج جديد (ممكن مع صورة أو من غيرها)
-// @route   POST /api/products
-// ------------------------------------------
-const createProduct = async (req, res, next) => {
-  try {
-    const {
-      name,
-      category,
-      costPrice,
-      sellingPrice,
-      quantityInStock,
-      minStockAlert,
-      unit,
-      isAvailableForCustomerReservation,
-    } = req.body;
-
-    let image = { url: "", publicId: "" };
-
-    // لو المنتج اتبعت معاه صورة وقت الإنشاء (req.file من multer)
-    if (req.file) {
-      const result = await uploadBufferToCloudinary(req.file.buffer, "barbershop/products");
-      image = { url: result.secure_url, publicId: result.public_id };
-    }
-
-    const product = await Product.create({
-      name,
-      category,
-      costPrice,
-      sellingPrice,
-      quantityInStock,
-      minStockAlert,
-      unit,
-      image,
-      isAvailableForCustomerReservation,
-    });
-
-    // لو دخلنا كمية ابتدائية، بنسجلها كحركة "دخول" في سجل المخزون
-    if (quantityInStock > 0) {
-      await StockMovement.create({
-        product: product._id,
-        type: "in",
-        quantity: quantityInStock,
-        reason: "رصيد افتتاحي عند إضافة المنتج",
-      });
-    }
-
-    res.status(201).json(product);
-  } catch (error) {
-    next(error);
-  }
-};
-
-// ------------------------------------------
-// @desc    تعديل بيانات منتج (السعر، الاسم، الفئة...) - مش بيغير الكمية هنا
-// @route   PUT /api/products/:id
-// ------------------------------------------
-const updateProduct = async (req, res, next) => {
-  try {
-    const product = await Product.findById(req.params.id);
-    if (!product) {
-      res.status(404);
-      return next(new Error("المنتج غير موجود"));
-    }
-
-    // بنمنع تعديل الكمية من هنا مباشرة، عشان دايمًا نستخدم "stock-in" أو عملية بيع
-    // وده يضمن إن سجل StockMovement فاضل دايمًا متزامن مع الكمية الفعلية
-    const { quantityInStock, ...allowedUpdates } = req.body;
-
-    Object.assign(product, allowedUpdates);
-    const updated = await product.save();
-
-    res.status(200).json(updated);
-  } catch (error) {
-    next(error);
-  }
-};
-
-// ------------------------------------------
-// @desc    رفع/تحديث صورة المنتج
-// @route   POST /api/products/:id/image
-// ------------------------------------------
-const updateProductImage = async (req, res, next) => {
-  try {
-    const product = await Product.findById(req.params.id);
-    if (!product) {
-      res.status(404);
-      return next(new Error("المنتج غير موجود"));
-    }
-
-    if (!req.file) {
+    if (!customerName || !customerPhone) {
       res.status(400);
-      return next(new Error("لازم ترفع صورة"));
+      return next(new Error("الاسم ورقم التليفون مطلوبين"));
     }
 
-    // لو المنتج كان ليه صورة قديمة، نحذفها من Cloudinary الأول عشان منسبش صور يتيمة تاخد مساحة
-    if (product.image && product.image.publicId) {
-      await cloudinary.uploader.destroy(product.image.publicId);
+    // بندور على العميل برقم تليفونه في جدول Customer المنفصل (عشان نقدر نجمع كل طلباته ببعض لاحقًا)
+    let customer = await Customer.findOne({ phone: customerPhone });
+    if (!customer) {
+      customer = await Customer.create({ name: customerName, phone: customerPhone });
+    } else if (customer.name !== customerName) {
+      customer.name = customerName;
+      await customer.save();
     }
 
-    const result = await uploadBufferToCloudinary(req.file.buffer, "barbershop/products");
-    product.image = { url: result.secure_url, publicId: result.public_id };
-    await product.save();
-
-    res.status(200).json(product);
-  } catch (error) {
-    next(error);
-  }
-};
-
-// ------------------------------------------
-// @desc    إضافة كمية جديدة للمخزون (لما الأدمن يشتري بضاعة جديدة)
-// @route   POST /api/products/:id/stock-in
-// ------------------------------------------
-const stockIn = async (req, res, next) => {
-  try {
-    const { quantity, reason } = req.body;
-
-    if (!quantity || quantity <= 0) {
+    const selectedServices = await Service.find({ _id: { $in: services } });
+    if (selectedServices.length === 0) {
       res.status(400);
-      return next(new Error("الكمية لازم تكون رقم أكبر من صفر"));
+      return next(new Error("لازم تختار خدمة واحدة على الأقل"));
     }
 
-    const product = await Product.findById(req.params.id);
-    if (!product) {
-      res.status(404);
-      return next(new Error("المنتج غير موجود"));
-    }
+    const totalPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
 
-    // بنزود الكمية في المنتج
-    product.quantityInStock += Number(quantity);
-    await product.save();
+    const dayStart = new Date(date);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(date);
+    dayEnd.setHours(23, 59, 59, 999);
 
-    // وبنسجل الحركة في سجل المخزون عشان يبقى عندنا تاريخ كامل لحركة البضاعة
-    await StockMovement.create({
-      product: product._id,
-      type: "in",
-      quantity,
-      reason: reason || "إضافة بضاعة جديدة",
+    // رقم دور العميل الجديد = عدد الحجوزات (مش الملغية) لنفس الحلاق في نفس اليوم + 1
+    const bookingsCountToday = await Booking.countDocuments({
+      employee,
+      date: { $gte: dayStart, $lte: dayEnd },
+      status: { $ne: "cancelled" },
     });
 
-    res.status(200).json(product);
+    const turn = bookingsCountToday + 1;
+
+    const booking = await Booking.create({
+      customer: customer._id,
+      customerName,
+      customerPhone,
+      employee,
+      services,
+      date,
+      turn,
+      totalPrice,
+      notes,
+    });
+
+    res.status(201).json(booking);
   } catch (error) {
     next(error);
   }
 };
 
 // ------------------------------------------
-// @desc    عرض المنتجات اللي كميتها قربت تخلص (وصلت لحد التنبيه أو أقل)
-// @route   GET /api/products/low-stock
+// @desc    عرض كل الحجوزات - أدمن بس (لوحة التحكم)
+// @route   GET /api/bookings
 // ------------------------------------------
-const getLowStockProducts = async (req, res, next) => {
+const getBookings = async (req, res, next) => {
   try {
-    // بنستخدم $expr عشان نقارن بين حقلين في نفس الدوكيومنت (الكمية الحالية مع حد التنبيه)
-    const lowStockProducts = await Product.find({
-      $expr: { $lte: ["$quantityInStock", "$minStockAlert"] },
-    });
+    const bookings = await Booking.find({})
+      .populate("employee", "name")
+      .populate("services", "name price durationInMinutes")
+      .sort({ date: -1, turn: 1 });
 
-    res.status(200).json(lowStockProducts);
+    res.status(200).json(bookings);
   } catch (error) {
     next(error);
   }
 };
 
 // ------------------------------------------
-// @desc    حذف منتج نهائيًا من قاعدة البيانات - أدمن بس
-// لو المنتج ليه صورة على Cloudinary، بنحذفها هي كمان عشان منسيبش صور يتيمة
-// @route   DELETE /api/products/:id
+// @desc    العميل بيشوف طلباته (الحالية والتاريخ) برقم تليفونه بس - Public
+// @route   GET /api/bookings/lookup?phone=xxxxxxxxxx
 // ------------------------------------------
-const deleteProduct = async (req, res, next) => {
+const lookupBookingsByPhone = async (req, res, next) => {
   try {
-    const product = await Product.findById(req.params.id);
-    if (!product) {
+    const { phone } = req.query;
+
+    if (!phone) {
+      res.status(400);
+      return next(new Error("رقم التليفون مطلوب"));
+    }
+
+    const bookings = await Booking.find({ customerPhone: phone })
+      .populate("employee", "name")
+      .populate("services", "name price durationInMinutes")
+      .sort({ date: -1, turn: 1 });
+
+    res.status(200).json(bookings);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ------------------------------------------
+// @desc    تحديث حالة الحجز (تأكيد/إتمام/إلغاء) - أدمن بس
+// @route   PUT /api/bookings/:id/status
+// ------------------------------------------
+const updateBookingStatus = async (req, res, next) => {
+  try {
+    const { status } = req.body;
+    const booking = await Booking.findById(req.params.id);
+
+    if (!booking) {
       res.status(404);
-      return next(new Error("المنتج غير موجود"));
+      return next(new Error("الحجز غير موجود"));
     }
 
-    // بنحذف صورة المنتج من Cloudinary الأول لو موجودة
-    if (product.image && product.image.publicId) {
-      await cloudinary.uploader.destroy(product.image.publicId);
+    booking.status = status;
+    await booking.save();
+
+    res.status(200).json(booking);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ------------------------------------------
+// @desc    حذف حجز نهائيًا من قاعدة البيانات - أدمن بس
+// @route   DELETE /api/bookings/:id
+// ------------------------------------------
+const deleteBooking = async (req, res, next) => {
+  try {
+    const booking = await Booking.findByIdAndDelete(req.params.id);
+
+    if (!booking) {
+      res.status(404);
+      return next(new Error("الحجز غير موجود"));
     }
 
-    await Product.findByIdAndDelete(req.params.id);
+    res.status(200).json({ message: "تم حذف الحجز بنجاح" });
+  } catch (error) {
+    next(error);
+  }
+};
 
-    res.status(200).json({ message: "تم حذف المنتج نهائيًا" });
+// ------------------------------------------
+// @desc    معرفة عدد الحجوزات الموجودة فعلاً لحلاق معين في يوم معين - Public
+// @route   GET /api/bookings/queue-count?employee=xxx&date=2026-08-10
+// ------------------------------------------
+const getQueueCount = async (req, res, next) => {
+  try {
+    const { employee, date } = req.query;
+
+    const dayStart = new Date(date);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(date);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    const count = await Booking.countDocuments({
+      employee,
+      date: { $gte: dayStart, $lte: dayEnd },
+      status: { $ne: "cancelled" },
+    });
+
+    res.status(200).json({ currentQueueCount: count, nextTurn: count + 1 });
   } catch (error) {
     next(error);
   }
 };
 
 module.exports = {
-  getProducts,
-  createProduct,
-  updateProduct,
-  updateProductImage,
-  stockIn,
-  getLowStockProducts,
-  deleteProduct,
+  createBooking,
+  getBookings,
+  lookupBookingsByPhone,
+  updateBookingStatus,
+  deleteBooking,
+  getQueueCount,
 };

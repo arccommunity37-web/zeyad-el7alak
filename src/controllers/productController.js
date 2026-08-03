@@ -198,6 +198,32 @@ const getLowStockProducts = async (req, res, next) => {
   }
 };
 
+// ------------------------------------------
+// @desc    حذف منتج نهائيًا من قاعدة البيانات - أدمن بس
+// لو المنتج ليه صورة على Cloudinary، بنحذفها هي كمان عشان منسيبش صور يتيمة
+// @route   DELETE /api/products/:id
+// ------------------------------------------
+const deleteProduct = async (req, res, next) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      res.status(404);
+      return next(new Error("المنتج غير موجود"));
+    }
+
+    // بنحذف صورة المنتج من Cloudinary الأول لو موجودة
+    if (product.image && product.image.publicId) {
+      await cloudinary.uploader.destroy(product.image.publicId);
+    }
+
+    await Product.findByIdAndDelete(req.params.id);
+
+    res.status(200).json({ message: "تم حذف المنتج نهائيًا" });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getProducts,
   createProduct,
@@ -205,4 +231,5 @@ module.exports = {
   updateProductImage,
   stockIn,
   getLowStockProducts,
+  deleteProduct,
 };
