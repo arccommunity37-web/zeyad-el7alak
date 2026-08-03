@@ -27,8 +27,10 @@ const getPublicEmployees = async (req, res, next) => {
 // ------------------------------------------
 const getUsers = async (req, res, next) => {
   try {
-    // بنجيب كل المستخدمين (مش بنرجع الباسورد أصلاً لأنه select:false في الموديل)
-    const users = await User.find({});
+    // افتراضيًا بنرجع الحلاقين النشطين بس (isActive: true)
+    // لو الأدمن عايز يشوف المعطّلين كمان، يبعت ?all=true
+    const filter = req.query.all === "true" ? {} : { isActive: true };
+    const users = await User.find(filter);
     res.status(200).json(users);
   } catch (error) {
     next(error);

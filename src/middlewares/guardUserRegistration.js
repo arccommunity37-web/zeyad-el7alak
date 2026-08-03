@@ -2,6 +2,9 @@
 // الميدلوير ده بيحمي endpoint إنشاء حساب أدمن/حلاق جديد (register-user)
 // المنطق: لو مفيش أدمن في النظام أصلاً (أول تشغيل)، بنسمح بالإنشاء بحرية (Bootstrap)
 // لو فيه أدمن موجود بالفعل، لازم اللي بيبعت الطلب يكون هو نفسه أدمن مسجل دخول
+//
+// ملحوظة: بيقرأ التوكن من الكوكي أول حاجة (نفس طريقة authMiddleware.protect بالظبط)
+// وبيقبل هيدر Authorization كـ fallback احتياطي بس
 // ==========================================
 
 const jwt = require("jsonwebtoken");
@@ -17,8 +20,11 @@ const guardUserRegistration = async (req, res, next) => {
     }
 
     // لو فيه أدمن بالفعل، لازم اللي بيبعت الطلب يكون هو نفسه أدمن مسجل دخول
-    let token;
-    if (req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
+    // الأولوية للتوكن اللي جاي من الكوكي (زي باقي النظام بالظبط)
+    let token = req.cookies?.admin_token;
+
+    // fallback: هيدر Authorization التقليدي (مفيد وقت الاختبار بـ Postman مثلاً)
+    if (!token && req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
       token = req.headers.authorization.split(" ")[1];
     }
 
