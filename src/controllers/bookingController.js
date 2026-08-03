@@ -1,52 +1,33 @@
 // ==========================================
-// الكنترولر ده مسؤول عن الحجوزات - العميل بيحجز بالاسم والتليفون بس، من غير أي تسجيل دخول
-// وبيقدر يشوف حالة/تاريخ طلباته لاحقًا بنفس رقم التليفون
+// الكنترولر ده مسؤول عن الحجوزات - نظام "يوم + دور" مش وقت محدد
+// العميل بيختار يوم وحلاق، والنظام بيدّيه رقم دوره تلقائيًا (تاني واحد، تالت واحد...)
+// مفيش تعارض مواعيد أصلاً لأن مفيش وقت محدد - كل واحد بياخد رقم وبس
 // ==========================================
 
 const Booking = require("../models/Booking");
 const Service = require("../models/Service");
 const Customer = require("../models/Customer");
 
-// تحويل "HH:mm" لعدد دقايق، والعكس - عشان نحسب ونقارن الأوقات بسهولة
-const timeToMinutes = (time) => {
-  const [hours, minutes] = time.split(":").map(Number);
-  return hours * 60 + minutes;
-};
-const minutesToTime = (totalMinutes) => {
-  const hours = Math.floor(totalMinutes / 60).toString().padStart(2, "0");
-  const minutes = (totalMinutes % 60).toString().padStart(2, "0");
-  return `${hours}:${minutes}`;
-};
-
-// بتتحقق هل فيه تعارض بين حجز جديد وحجوزات موجودة لنفس الحلاق في نفس اليوم
-const hasTimeConflict = (existingBookings, newStart, newEnd) => {
-  return existingBookings.some((booking) => {
-    const existingStart = timeToMinutes(booking.startTime);
-    const existingEnd = timeToMinutes(booking.endTime);
-    return newStart < existingEnd && existingStart < newEnd;
-  });
-};
-
 // ------------------------------------------
 // @desc    إنشاء حجز جديد - Public، من غير تسجيل دخول خالص
 // @route   POST /api/bookings
-// body المتوقع: { customerName, customerPhone, employee, services, date, startTime, notes }
+// body المتوقع: { customerName, customerPhone, employee, services, date, notes }
+// (مفيش startTime خالص - النظام بيدي رقم الدور تلقائيًا)
 // ------------------------------------------
 const createBooking = async (req, res, next) => {
   try {
-    const { customerName, customerPhone, employee, services, date, startTime, notes } = req.body;
+    const { customerName, customerPhone, employee, services, date, notes } = req.body;
 
     if (!customerName || !customerPhone) {
       res.status(400);
       return next(new Error("الاسم ورقم التليفون مطلوبين"));
     }
 
-    // بندور على العميل برقم تليفونه، ولو مش موجود بننشئه دلوقتي (من غير باسورد خالص)
+    // بندور على العميل برقم تليفونه، ولو مش موجود بننشئه دلوقتي
     let customer = await Customer.findOne({ phone: customerPhone });
     if (!customer) {
       customer = await Customer.create({ name: customerName, phone: customerPhone });
     } else if (customer.name !== customerName) {
-      // لو غيّر اسمه المرة دي، بنحدثه (اختياري بس مفيد)
       customer.name = customerName;
       await customer.save();
     }
@@ -57,36 +38,30 @@ const createBooking = async (req, res, next) => {
       return next(new Error("لازم تختار خدمة واحدة على الأقل"));
     }
 
-    const totalDuration = selectedServices.reduce((sum, s) => sum + s.durationInMinutes, 0);
     const totalPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
 
-    const startMinutes = timeToMinutes(startTime);
-    const endMinutes = startMinutes + totalDuration;
-    const endTime = minutesToTime(endMinutes);
-
+    // بنحدد حدود اليوم المطلوب (من أول الساعة 00:00 لآخر ساعة 23:59)
     const dayStart = new Date(date);
     dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(date);
     dayEnd.setHours(23, 59, 59, 999);
 
-    const existingBookings = await Booking.find({
+    // ✋ الخطوة الأهم: بنعد كام حجز (مش ملغي) موجود بالفعل لنفس الحلاق في نفس اليوم
+    // ورقم الدور بتاع العميل الجديد = العدد ده + 1
+    const bookingsCountToday = await Booking.countDocuments({
       employee,
       date: { $gte: dayStart, $lte: dayEnd },
       status: { $ne: "cancelled" },
     });
 
-    if (hasTimeConflict(existingBookings, startMinutes, endMinutes)) {
-      res.status(409);
-      return next(new Error("الميعاد ده متحجز بالفعل لنفس الحلاق، اختار وقت تاني"));
-    }
+    const queueNumber = bookingsCountToday + 1;
 
     const booking = await Booking.create({
       customer: customer._id,
       employee,
       services,
       date,
-      startTime,
-      endTime,
+      queueNumber,
       totalPrice,
       notes,
     });
@@ -99,6 +74,7 @@ const createBooking = async (req, res, next) => {
 
 // ------------------------------------------
 // @desc    عرض كل الحجوزات - أدمن بس (لوحة التحكم)
+// ترتيب الحجوزات حسب اليوم بعدين رقم الدور، عشان يبقى شكل الطابور واضح
 // @route   GET /api/bookings
 // ------------------------------------------
 const getBookings = async (req, res, next) => {
@@ -107,7 +83,7 @@ const getBookings = async (req, res, next) => {
       .populate("customer", "name phone")
       .populate("employee", "name")
       .populate("services", "name price durationInMinutes")
-      .sort({ date: -1, startTime: -1 });
+      .sort({ date: -1, queueNumber: 1 });
 
     res.status(200).json(bookings);
   } catch (error) {
@@ -130,13 +106,13 @@ const lookupBookingsByPhone = async (req, res, next) => {
 
     const customer = await Customer.findOne({ phone });
     if (!customer) {
-      return res.status(200).json([]); // مفيش عميل بالرقم ده، يبقى مفيش طلبات
+      return res.status(200).json([]);
     }
 
     const bookings = await Booking.find({ customer: customer._id })
       .populate("employee", "name")
       .populate("services", "name price durationInMinutes")
-      .sort({ date: -1, startTime: -1 });
+      .sort({ date: -1, queueNumber: 1 });
 
     res.status(200).json(bookings);
   } catch (error) {
@@ -168,51 +144,27 @@ const updateBookingStatus = async (req, res, next) => {
 };
 
 // ------------------------------------------
-// @desc    عرض المواعيد المتاحة لحلاق معين في يوم معين - Public
-// @route   GET /api/bookings/available-slots?employee=xxx&date=2026-08-01
+// @desc    معرفة عدد الحجوزات الموجودة فعلاً لحلاق معين في يوم معين - Public
+// مفيدة للعميل قبل ما يحجز عشان يعرف هيبقى دوره كام تقريبًا (العدد ده + 1)
+// @route   GET /api/bookings/queue-count?employee=xxx&date=2026-08-10
 // ------------------------------------------
-const getAvailableSlots = async (req, res, next) => {
+const getQueueCount = async (req, res, next) => {
   try {
     const { employee, date } = req.query;
-
-    const User = require("../models/User");
-    const employeeDoc = await User.findById(employee);
-    if (!employeeDoc) {
-      res.status(404);
-      return next(new Error("الحلاق غير موجود"));
-    }
 
     const dayStart = new Date(date);
     dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(date);
     dayEnd.setHours(23, 59, 59, 999);
 
-    const bookings = await Booking.find({
+    const count = await Booking.countDocuments({
       employee,
       date: { $gte: dayStart, $lte: dayEnd },
       status: { $ne: "cancelled" },
-    }).sort({ startTime: 1 });
-
-    const workStart = timeToMinutes(employeeDoc.workingHours.from);
-    const workEnd = timeToMinutes(employeeDoc.workingHours.to);
-
-    const freeSlots = [];
-    let cursor = workStart;
-
-    bookings.forEach((booking) => {
-      const bookingStart = timeToMinutes(booking.startTime);
-      const bookingEnd = timeToMinutes(booking.endTime);
-      if (bookingStart > cursor) {
-        freeSlots.push({ from: minutesToTime(cursor), to: minutesToTime(bookingStart) });
-      }
-      cursor = Math.max(cursor, bookingEnd);
     });
 
-    if (cursor < workEnd) {
-      freeSlots.push({ from: minutesToTime(cursor), to: minutesToTime(workEnd) });
-    }
-
-    res.status(200).json(freeSlots);
+    // لو العميل حجز دلوقتي، رقم دوره هيبقى نفس الرقم ده + 1
+    res.status(200).json({ currentQueueCount: count, nextQueueNumber: count + 1 });
   } catch (error) {
     next(error);
   }
@@ -223,5 +175,5 @@ module.exports = {
   getBookings,
   lookupBookingsByPhone,
   updateBookingStatus,
-  getAvailableSlots,
+  getQueueCount,
 };
