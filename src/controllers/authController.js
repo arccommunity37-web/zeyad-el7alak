@@ -1,10 +1,29 @@
 // ==========================================
-// الكنترولر ده مسؤول عن التوثيق - وبقى محصور في الأدمن والحلاقين بس (User model)
+// الكنترولر ده مسؤول عن التوثيق - محصور في الأدمن بس (User model بدور admin)
 // مفيش تسجيل دخول للعملاء خالص - العميل بيتعامل مع النظام بالاسم والتليفون بس بدون أي توكن
+//
+// طريقة حفظ جلسة الدخول: httpOnly Cookie (مش localStorage)
+// السبب: httpOnly يعني إن كود الـ JavaScript في المتصفح مايقدرش يقرا التوكن خالص
+// (حماية من هجمات XSS)، والمتصفح هو اللي بيبعت الكوكي تلقائيًا مع كل طلب لنفس الدومين
 // ==========================================
 
 const User = require("../models/User");
 const generateToken = require("../utils/generateToken");
+
+// اسم الكوكي اللي هنخزن فيها توكن الأدمن
+const COOKIE_NAME = "admin_token";
+
+// ------------------------------------------
+// دالة مساعدة: بتحط الكوكي على الـ response بإعدادات آمنة
+// ------------------------------------------
+const setAuthCookie = (res, token) => {
+  res.cookie(COOKIE_NAME, token, {
+    httpOnly: true, // كود الـ JS في المتصفح مايقدرش يقرا الكوكي دي خالص (حماية من XSS)
+    secure: true, // الكوكي بتتبعت بس عبر HTTPS
+    sameSite: "none", // ضروري عشان الكوكي تشتغل بين دومينين مختلفين (الفرونت والباك اند)
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 أيام بالميلي ثانية
+  });
+};
 
 // ------------------------------------------
 // @desc    تسجيل أدمن جديد (أول مرة) أو إضافة حلاق جديد (بعد كده، الأدمن بس اللي يقدر)
@@ -24,13 +43,16 @@ const registerUser = async (req, res, next) => {
     // لو بيضيف حلاق (employee)، الباسورد مش لازم أصلاً لأنه مش هيسجل دخول أبدًا
     const user = await User.create({ name, email, phone, password, role });
 
+    // لو الحساب الجديد أدمن، بنسجله دخول على طول بحط الكوكي (بدل ما يضطر يعمل login تاني)
+    if (user.role === "admin") {
+      setAuthCookie(res, generateToken(user._id));
+    }
+
     res.status(201).json({
       _id: user._id,
       name: user.name,
       email: user.email,
       role: user.role,
-      // التوكن بيترجع بس لو أدمن (الحلاق أصلاً مش محتاج توكن لأنه مش هيسجل دخول)
-      token: user.role === "admin" ? generateToken(user._id) : null,
     });
   } catch (error) {
     next(error);
@@ -59,11 +81,14 @@ const login = async (req, res, next) => {
       return next(new Error("بيانات الدخول غير صحيحة"));
     }
 
+    // بنحط التوكن في httpOnly cookie بدل ما نرجعه في الـ body
+    // (الفرونت اند مش محتاج يخزنه بنفسه في localStorage خالص)
+    setAuthCookie(res, generateToken(account._id));
+
     res.status(200).json({
       _id: account._id,
       name: account.name,
       role: account.role,
-      token: generateToken(account._id),
     });
   } catch (error) {
     next(error);
@@ -71,7 +96,25 @@ const login = async (req, res, next) => {
 };
 
 // ------------------------------------------
-// @desc    جلب بيانات الأدمن الحالي (صاحب التوكن)
+// @desc    تسجيل خروج الأدمن - بيمسح الكوكي
+// @route   POST /api/auth/logout
+// ------------------------------------------
+const logout = async (req, res, next) => {
+  try {
+    // بنمسح نفس الكوكي بنفس الإعدادات اللي اتحطت بيها (لازم نفس sameSite/secure عشان تتمسح صح)
+    res.clearCookie(COOKIE_NAME, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+    });
+    res.status(200).json({ message: "تم تسجيل الخروج بنجاح" });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ------------------------------------------
+// @desc    جلب بيانات الأدمن الحالي (صاحب الكوكي)
 // @route   GET /api/auth/me
 // ------------------------------------------
 const getMe = async (req, res, next) => {
@@ -86,4 +129,4 @@ const getMe = async (req, res, next) => {
   }
 };
 
-module.exports = { registerUser, login, getMe };
+module.exports = { registerUser, login, logout, getMe };

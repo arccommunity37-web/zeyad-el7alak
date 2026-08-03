@@ -6,6 +6,7 @@
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
+const cookieParser = require("cookie-parser");
 
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
@@ -21,8 +22,23 @@ const app = express();
 
 // ---------- الميدلويرز العامة (بتشتغل على كل طلب بيجي للسيرفر) ----------
 
-// cors بيسمح للموقع (Frontend) اللي شغال على دومين مختلف إنه يكلم الباك اند من غير ما المتصفح يمنعه
-app.use(cors());
+// بنقرأ رابط الفرونت اند المسموح له يكلم الباك اند من متغيرات البيئة
+// (ممكن نحط أكتر من رابط مفصولين بفاصلة، زي لوكال + الدومين بتاع الإنتاج)
+const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:3000")
+  .split(",")
+  .map((url) => url.trim());
+
+// cors بيسمح للموقع (Frontend) اللي شغال على دومين مختلف إنه يكلم الباك اند
+// credentials: true ضروري عشان نقدر نبعت ونستقبل httpOnly cookies بين دومينين مختلفين
+app.use(
+  cors({
+    origin: allowedOrigins,
+    credentials: true,
+  })
+);
+
+// cookieParser بيخلي إكسبريس يقدر يقرا الكوكيز اللي جاية مع الطلب (req.cookies)
+app.use(cookieParser());
 
 // express.json() بيخلي إكسبريس يفهم البيانات اللي جاية بصيغة JSON في body الطلب
 app.use(express.json());
