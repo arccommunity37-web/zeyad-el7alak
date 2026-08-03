@@ -1,6 +1,6 @@
 // ==========================================
 // راوتس حجز المنتجات: الحجز والاستعلام Public (بالاسم والتليفون)
-// عرض كل الحجوزات وتحديث حالتها للأدمن بس
+// عرض/تحديث/حذف الحجوزات للأدمن بس
 // ==========================================
 
 const express = require("express");
@@ -10,13 +10,15 @@ const {
   getReservations,
   lookupReservationsByPhone,
   updateReservationStatus,
+  deleteReservation,
 } = require("../controllers/reservationController");
 const { protect } = require("../middlewares/authMiddleware");
 
-router.get("/lookup", lookupReservationsByPhone); // Public
+router.get("/lookup", lookupReservationsByPhone);
 
 router.post("/", createReservation); // Public
 router.get("/", protect, getReservations); // أدمن بس
 router.put("/:id/status", protect, updateReservationStatus); // أدمن بس
+router.delete("/:id", protect, deleteReservation); // أدمن بس
 
 module.exports = router;

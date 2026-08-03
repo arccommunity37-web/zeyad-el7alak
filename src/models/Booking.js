@@ -1,6 +1,11 @@
 // ==========================================
 // موديل Booking: بيمثل حجز (عميل + حلاق + خدمة/خدمات + يوم + دور في الطابور)
-// مفيش وقت محدد خالص - العميل بياخد رقم دور (queueNumber) في يوم معين مع حلاق معين
+// مفيش وقت محدد خالص - العميل بياخد رقم دور (turn) في يوم معين مع حلاق معين
+//
+// ملحوظة: بنخزن اسم ورقم تليفون العميل هنا مباشرة (customerName/customerPhone)
+// بالإضافة لربطه بجدول Customer (customer). التكرار ده مقصود:
+// - customerName/customerPhone: عشان لوحة تحكم الأدمن تقدر تعرضهم على طول من غير populate
+// - customer: عشان نقدر نجمع كل حجوزات نفس العميل ببعض (lookup بالتليفون)
 // ==========================================
 
 const mongoose = require("mongoose");
@@ -11,6 +16,17 @@ const bookingSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Customer",
       required: true,
+    },
+    // اسم ورقم تليفون العميل - مخزنين هنا مباشرة عشان يظهروا فورًا في أي رد من غير populate
+    customerName: {
+      type: String,
+      required: [true, "اسم العميل مطلوب"],
+      trim: true,
+    },
+    customerPhone: {
+      type: String,
+      required: [true, "رقم تليفون العميل مطلوب"],
+      trim: true,
     },
     employee: {
       type: mongoose.Schema.Types.ObjectId,
@@ -30,7 +46,7 @@ const bookingSchema = new mongoose.Schema(
     },
     // رقم دور العميل في الطابور بتاع نفس الحلاق في نفس اليوم ده (1، 2، 3...)
     // بيتحسب تلقائيًا في الكنترولر وقت إنشاء الحجز
-    queueNumber: {
+    turn: {
       type: Number,
       required: true,
       min: 1,

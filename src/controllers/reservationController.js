@@ -10,7 +10,6 @@ const StockMovement = require("../models/StockMovement");
 // ------------------------------------------
 // @desc    العميل بيحجز منتج معين - Public
 // @route   POST /api/product-reservations
-// body المتوقع: { customerName, customerPhone, product, quantity, reservedUntil }
 // ------------------------------------------
 const createReservation = async (req, res, next) => {
   try {
@@ -39,7 +38,6 @@ const createReservation = async (req, res, next) => {
       );
     }
 
-    // بندور على العميل برقم تليفونه، ولو مش موجود بننشئه دلوقتي
     let customer = await Customer.findOne({ phone: customerPhone });
     if (!customer) {
       customer = await Customer.create({ name: customerName, phone: customerPhone });
@@ -48,12 +46,13 @@ const createReservation = async (req, res, next) => {
       await customer.save();
     }
 
-    // بنخصم الكمية فورًا عشان "نحجزها"
     product.quantityInStock -= quantity;
     await product.save();
 
     const reservation = await ProductReservation.create({
       customer: customer._id,
+      customerName,
+      customerPhone,
       product: productId,
       quantity,
       reservedUntil,
@@ -72,7 +71,6 @@ const createReservation = async (req, res, next) => {
 const getReservations = async (req, res, next) => {
   try {
     const reservations = await ProductReservation.find({})
-      .populate("customer", "name phone")
       .populate("product", "name sellingPrice image")
       .sort({ createdAt: -1 });
 
@@ -95,12 +93,7 @@ const lookupReservationsByPhone = async (req, res, next) => {
       return next(new Error("رقم التليفون مطلوب"));
     }
 
-    const customer = await Customer.findOne({ phone });
-    if (!customer) {
-      return res.status(200).json([]);
-    }
-
-    const reservations = await ProductReservation.find({ customer: customer._id })
+    const reservations = await ProductReservation.find({ customerPhone: phone })
       .populate("product", "name sellingPrice image")
       .sort({ createdAt: -1 });
 
@@ -150,6 +143,34 @@ const updateReservationStatus = async (req, res, next) => {
   }
 };
 
+// ------------------------------------------
+// @desc    حذف حجز منتج نهائيًا - أدمن بس
+// لو الحجز لسه ماتلغيش، بنرجع الكمية للمخزون الأول قبل الحذف عشان الأرقام تفضل صح
+// @route   DELETE /api/product-reservations/:id
+// ------------------------------------------
+const deleteReservation = async (req, res, next) => {
+  try {
+    const reservation = await ProductReservation.findById(req.params.id);
+    if (!reservation) {
+      res.status(404);
+      return next(new Error("الحجز غير موجود"));
+    }
+
+    if (!["cancelled", "picked_up"].includes(reservation.status)) {
+      const product = await Product.findById(reservation.product);
+      if (product) {
+        product.quantityInStock += reservation.quantity;
+        await product.save();
+      }
+    }
+
+    await reservation.deleteOne();
+    res.status(200).json({ message: "تم حذف الحجز بنجاح" });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // دالة يستخدمها node-cron/Vercel Cron لإلغاء الحجوزات المنتهية تلقائيًا
 const cancelExpiredReservations = async () => {
   const now = new Date();
@@ -179,5 +200,6 @@ module.exports = {
   getReservations,
   lookupReservationsByPhone,
   updateReservationStatus,
+  deleteReservation,
   cancelExpiredReservations,
 };

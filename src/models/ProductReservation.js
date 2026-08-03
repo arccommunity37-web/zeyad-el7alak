@@ -1,6 +1,7 @@
 // ==========================================
 // موديل ProductReservation: بيمثل حجز منتج معين من قبل العميل
 // (العميل بيحجز، وبعدين ييجي المحل يستلم ويدفع كاش)
+// بنخزن اسم ورقم تليفون العميل مباشرة هنا كمان (زي الحجوزات بالظبط) عشان يظهروا فورًا في أي رد
 // ==========================================
 
 const mongoose = require("mongoose");
@@ -11,6 +12,16 @@ const productReservationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Customer",
       required: true,
+    },
+    customerName: {
+      type: String,
+      required: [true, "اسم العميل مطلوب"],
+      trim: true,
+    },
+    customerPhone: {
+      type: String,
+      required: [true, "رقم تليفون العميل مطلوب"],
+      trim: true,
     },
     product: {
       type: mongoose.Schema.Types.ObjectId,

@@ -1,6 +1,6 @@
 // ==========================================
-// راوتس الحجوزات: الحجز والاستعلام Public (بالاسم والتليفون، بدون وقت خالص - يوم ودور بس)
-// عرض كل الحجوزات وتحديث حالتها للأدمن بس
+// راوتس الحجوزات: الحجز والاستعلام Public (بالاسم والتليفون، يوم ودور بس)
+// عرض/تحديث/حذف الحجوزات للأدمن بس
 // ==========================================
 
 const express = require("express");
@@ -10,16 +10,17 @@ const {
   getBookings,
   lookupBookingsByPhone,
   updateBookingStatus,
+  deleteBooking,
   getQueueCount,
 } = require("../controllers/bookingController");
 const { protect } = require("../middlewares/authMiddleware");
 
-// مهم: المسارات الثابتة لازم تتحط قبل "/:id"
 router.get("/queue-count", getQueueCount);
 router.get("/lookup", lookupBookingsByPhone);
 
-router.post("/", createBooking); // Public - أي عميل يقدر يحجز بالاسم والتليفون
-router.get("/", protect, getBookings); // أدمن بس - لوحة التحكم
+router.post("/", createBooking); // Public
+router.get("/", protect, getBookings); // أدمن بس
 router.put("/:id/status", protect, updateBookingStatus); // أدمن بس
+router.delete("/:id", protect, deleteBooking); // أدمن بس
 
 module.exports = router;
