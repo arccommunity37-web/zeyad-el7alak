@@ -46,6 +46,12 @@ const userSchema = new mongoose.Schema(
       to: { type: String, default: "22:00" },
       daysOff: { type: [String], default: [] },
     },
+    // مدة الحجز الواحد بالدقايق - كل حلاق ليها قيمة مستقلة (مستخدمة بس في وضع "الحجز بالوقت")
+    slotDurationMinutes: {
+      type: Number,
+      default: 30,
+      min: [5, "مدة الحجز لازم تكون 5 دقايق على الأقل"],
+    },
     isActive: {
       type: Boolean,
       default: true,

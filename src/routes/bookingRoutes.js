@@ -1,5 +1,6 @@
 // ==========================================
-// راوتس الحجوزات: الحجز والاستعلام Public (بالاسم والتليفون، يوم ودور بس)
+// راوتس الحجوزات: الحجز والاستعلام Public (بالاسم والتليفون)
+// بتدعم وضعين: دور (queue) ووقت محدد (time) - حسب إعدادات المحل الحالية
 // عرض/تحديث/حذف الحجوزات للأدمن بس
 // ==========================================
 
@@ -12,10 +13,13 @@ const {
   updateBookingStatus,
   deleteBooking,
   getQueueCount,
+  getTimeSlots,
 } = require("../controllers/bookingController");
 const { protect } = require("../middlewares/authMiddleware");
 
-router.get("/queue-count", getQueueCount);
+// مهم: المسارات الثابتة لازم تتحط قبل "/:id"
+router.get("/queue-count", getQueueCount); // وضع "الدور"
+router.get("/time-slots", getTimeSlots); // وضع "الوقت"
 router.get("/lookup", lookupBookingsByPhone);
 
 router.post("/", createBooking); // Public

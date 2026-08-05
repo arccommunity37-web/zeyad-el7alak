@@ -67,13 +67,14 @@ const updateUser = async (req, res, next) => {
     }
 
     // بنحدث بس الحقول اللي اتبعتت، والباقي يفضل زي ما هو
-    const { name, phone, specialties, workingHours, isActive } = req.body;
+    const { name, phone, specialties, workingHours, isActive, slotDurationMinutes } = req.body;
 
     if (name) user.name = name;
     if (phone) user.phone = phone;
     if (specialties) user.specialties = specialties;
     if (workingHours) user.workingHours = { ...user.workingHours, ...workingHours };
     if (typeof isActive === "boolean") user.isActive = isActive;
+    if (typeof slotDurationMinutes === "number") user.slotDurationMinutes = slotDurationMinutes;
 
     const updatedUser = await user.save();
     res.status(200).json(updatedUser);

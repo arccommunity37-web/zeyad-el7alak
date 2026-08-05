@@ -1,11 +1,10 @@
 // ==========================================
-// موديل Booking: بيمثل حجز (عميل + حلاق + خدمة/خدمات + يوم + دور في الطابور)
-// مفيش وقت محدد خالص - العميل بياخد رقم دور (turn) في يوم معين مع حلاق معين
+// موديل Booking: بيمثل حجز - وبيدعم وضعين مختلفين حسب إعدادات المحل الحالية (BookingSettings.mode):
 //
-// ملحوظة: بنخزن اسم ورقم تليفون العميل هنا مباشرة (customerName/customerPhone)
-// بالإضافة لربطه بجدول Customer (customer). التكرار ده مقصود:
-// - customerName/customerPhone: عشان لوحة تحكم الأدمن تقدر تعرضهم على طول من غير populate
-// - customer: عشان نقدر نجمع كل حجوزات نفس العميل ببعض (lookup بالتليفون)
+// وضع "الدور" (queue): بيتملى حقل turn بس (رقم الدور في اليوم ده مع الحلاق ده)
+// وضع "الوقت" (time): بيتملى إما startTime (معاد حقيقي)، أو isWaiting+waitingPosition (رقم في قايمة الانتظار)
+//
+// أي حجز بيتعمل بياخد شكل واحد بس حسب الوضع اللي كان شغال وقتها - مفيش تعارض بين الحقول
 // ==========================================
 
 const mongoose = require("mongoose");
@@ -17,7 +16,6 @@ const bookingSchema = new mongoose.Schema(
       ref: "Customer",
       required: true,
     },
-    // اسم ورقم تليفون العميل - مخزنين هنا مباشرة عشان يظهروا فورًا في أي رد من غير populate
     customerName: {
       type: String,
       required: [true, "اسم العميل مطلوب"],
@@ -30,7 +28,7 @@ const bookingSchema = new mongoose.Schema(
     },
     employee: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User", // الحلاق اللي هيقدم الخدمة
+      ref: "User",
       required: true,
     },
     services: [
@@ -44,13 +42,31 @@ const bookingSchema = new mongoose.Schema(
       type: Date,
       required: [true, "تاريخ الحجز مطلوب"],
     },
-    // رقم دور العميل في الطابور بتاع نفس الحلاق في نفس اليوم ده (1، 2، 3...)
-    // بيتحسب تلقائيًا في الكنترولر وقت إنشاء الحجز
+
+    // ---------- حقول وضع "الدور" ----------
+    // رقم دور العميل في الطابور بتاع نفس الحلاق في نفس اليوم (1، 2، 3...)
     turn: {
       type: Number,
-      required: true,
-      min: 1,
+      default: null,
     },
+
+    // ---------- حقول وضع "الوقت" ----------
+    // المعاد المحدد (لو العميل حجز معاد حقيقي متاح) - صيغة "HH:mm"
+    startTime: {
+      type: String,
+      default: null,
+    },
+    // هل الحجز ده في قايمة الانتظار بدل معاد حقيقي؟
+    isWaiting: {
+      type: Boolean,
+      default: false,
+    },
+    // رقم مكان العميل في قايمة الانتظار (1، 2، 3...) - موجود بس لو isWaiting=true
+    waitingPosition: {
+      type: Number,
+      default: null,
+    },
+
     status: {
       type: String,
       enum: ["pending", "confirmed", "completed", "cancelled"],
