@@ -5,7 +5,7 @@
 
 const express = require("express");
 const router = express.Router();
-const { registerUser, login, logout, getMe } = require("../controllers/authController");
+const { registerUser, login, logout, getMe, changeCredentials } = require("../controllers/authController");
 const { protect } = require("../middlewares/authMiddleware");
 const guardUserRegistration = require("../middlewares/guardUserRegistration");
 
@@ -20,5 +20,8 @@ router.post("/logout", logout);
 
 // بيانات الأدمن الحالي
 router.get("/me", protect, getMe);
+
+// تغيير يوزر نيم (إيميل) و/أو باسورد الأدمن
+router.put("/change-credentials", protect, changeCredentials);
 
 module.exports = router;

@@ -1,15 +1,17 @@
 // ==========================================
-// الكنترولر ده مسؤول عن الحجوزات - بيدعم وضعين حسب إعدادات المحل (BookingSettings.mode):
+// الكنترولر ده مسؤول عن الحجوزات - بيدعم وضعين حسب "طريقة الحجز الفعلية لليوم المطلوب":
 // - "queue": حجز بالدور بس (مع حد أقصى اختياري لعدد الأدوار في اليوم)
-// - "time": حجز بمعاد محدد (حسب ساعات شغل ومدة حجز كل حلاق)، ولو المعاد مشغول العميل يقدر
-//           يختار مكان في قايمة الانتظار (سعتها بيحددها الأدمن)
+// - "time": حجز بمعاد محدد (حسب مواعيد شغل ومدة حجز عامة للمحل)، أو مكان في قايمة الانتظار
+//
+// مهم: طريقة الحجز مش ثابتة - كل يوم ممكن يكون ليه طريقته الخاصة (استثناء) عن طريق
+// getEffectiveModeForDate، فبنستخدمها دايمًا بدل ما نفترض إن كل الأيام نفس الطريقة
 // ==========================================
 
 const Booking = require("../models/Booking");
 const Service = require("../models/Service");
 const Customer = require("../models/Customer");
 const User = require("../models/User");
-const { getOrCreateSettings } = require("./settingsController");
+const { getOrCreateSettings, getEffectiveModeForDate } = require("./settingsController");
 
 // تحويل "HH:mm" لعدد دقايق، والعكس
 const timeToMinutes = (time) => {
@@ -36,9 +38,7 @@ const getWeekdayName = (date) => {
   return new Date(date).toLocaleDateString("en-US", { weekday: "long" });
 };
 
-// ------------------------------------------
-// دالة مساعدة: بتولّد كل المعادات الممكنة ليوم معين حسب ساعات شغل الحلاق ومدة الحجز بتاعته
-// ------------------------------------------
+// بتولّد كل المعادات الممكنة ليوم معين حسب مواعيد الشغل ومدة الحجز العامة
 const generateTimeSlots = (workingHours, slotDurationMinutes) => {
   const slots = [];
   let cursor = timeToMinutes(workingHours.from);
@@ -51,9 +51,7 @@ const generateTimeSlots = (workingHours, slotDurationMinutes) => {
   return slots;
 };
 
-// ------------------------------------------
-// دالة مساعدة مشتركة: بتدور على عميل برقم تليفونه، ولو مش موجود بتنشئه
-// ------------------------------------------
+// بتدور على عميل برقم تليفونه، ولو مش موجود بتنشئه
 const findOrCreateCustomer = async (customerName, customerPhone) => {
   let customer = await Customer.findOne({ phone: customerPhone });
   if (!customer) {
@@ -66,7 +64,7 @@ const findOrCreateCustomer = async (customerName, customerPhone) => {
 };
 
 // ------------------------------------------
-// @desc    إنشاء حجز جديد - Public، سلوكه بيختلف حسب وضع الحجز الحالي في المحل
+// @desc    إنشاء حجز جديد - Public، سلوكه بيختلف حسب طريقة الحجز الفعلية لليوم المطلوب
 // @route   POST /api/bookings
 // body دايمًا فيه: { customerName, customerPhone, employee, services, date, notes? }
 // في وضع "time" لازم كمان: { startTime } أو { waitingPosition } (واحد بس مش الاتنين)
@@ -91,6 +89,8 @@ const createBooking = async (req, res, next) => {
     const totalPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
 
     const settings = await getOrCreateSettings();
+    // ✋ هنا الفرق المهم: بنجيب طريقة الحجز الفعلية لليوم ده بالذات (ممكن يكون ليه استثناء خاص)
+    const effectiveMode = await getEffectiveModeForDate(date);
     const { dayStart, dayEnd } = getDayRange(date);
 
     const baseBookingData = {
@@ -105,14 +105,13 @@ const createBooking = async (req, res, next) => {
     };
 
     // ========== وضع "الدور" ==========
-    if (settings.mode === "queue") {
+    if (effectiveMode === "queue") {
       const bookingsCountToday = await Booking.countDocuments({
         employee,
         date: { $gte: dayStart, $lte: dayEnd },
         status: { $ne: "cancelled" },
       });
 
-      // ✋ لو الأدمن حاطط حد أقصى وخلص، نرفض الحجز
       if (settings.queueLimitEnabled && bookingsCountToday >= settings.queueLimit) {
         res.status(409);
         return next(new Error("الأدوار المتاحة خلصت النهاردة، جرب يوم تاني"));
@@ -123,15 +122,13 @@ const createBooking = async (req, res, next) => {
     }
 
     // ========== وضع "الوقت" ==========
-    if (settings.mode === "time") {
-      // العميل لازم يحدد إما معاد حقيقي أو رقم في قايمة الانتظار - مش الاتنين ومش ولا واحد
+    if (effectiveMode === "time") {
       if (startTime && waitingPosition) {
         res.status(400);
         return next(new Error("حدد إما معاد أو مكان في قايمة الانتظار، مش الاتنين"));
       }
 
       if (startTime) {
-        // بنتأكد إن حد ماحجزش نفس المعاد ده قبلنا (Race condition بسيط بس بيغطي أغلب الحالات)
         const conflict = await Booking.findOne({
           employee,
           date: { $gte: dayStart, $lte: dayEnd },
@@ -180,7 +177,6 @@ const createBooking = async (req, res, next) => {
       return next(new Error("لازم تحدد معاد أو مكان في قايمة الانتظار"));
     }
 
-    // احتياطي: لو وضع غير متعرف عليه لأي سبب
     res.status(500);
     next(new Error("وضع الحجز في إعدادات المحل غير صالح"));
   } catch (error) {
@@ -189,7 +185,7 @@ const createBooking = async (req, res, next) => {
 };
 
 // ------------------------------------------
-// @desc    عرض المعادات والانتظار المتاحة ليوم معين مع حلاق معين - Public (وضع "الوقت" بس)
+// @desc    عرض المعادات والانتظار المتاحة ليوم معين مع حلاق معين - Public (وضع "الوقت")
 // @route   GET /api/bookings/time-slots?employee=xxx&date=2026-08-10
 // ------------------------------------------
 const getTimeSlots = async (req, res, next) => {
@@ -210,10 +206,11 @@ const getTimeSlots = async (req, res, next) => {
     const { dayStart, dayEnd } = getDayRange(date);
     const settings = await getOrCreateSettings();
 
-    // كل المعادات الحقيقية الممكنة حسب ساعات شغل ومدة حجز الحلاق ده
-    const allSlots = generateTimeSlots(employeeDoc.workingHours, employeeDoc.slotDurationMinutes);
+    const allSlots = generateTimeSlots(
+      { from: settings.workingHoursFrom, to: settings.workingHoursTo },
+      settings.slotDurationMinutes
+    );
 
-    // المعادات المحجوزة فعليًا (مش ملغية)
     const bookedTimeDocs = await Booking.find({
       employee,
       date: { $gte: dayStart, $lte: dayEnd },
@@ -228,7 +225,6 @@ const getTimeSlots = async (req, res, next) => {
       status: bookedTimes.has(time) ? "booked" : "available",
     }));
 
-    // أماكن قايمة الانتظار المحجوزة
     const bookedWaitingDocs = await Booking.find({
       employee,
       date: { $gte: dayStart, $lte: dayEnd },
@@ -267,6 +263,8 @@ const getBookings = async (req, res, next) => {
 
 // ------------------------------------------
 // @desc    العميل بيشوف طلباته برقم تليفونه بس - Public
+// لكل حجز بنظام "الدور"، بنحسب كمان "باقيله كام واحد قدامه" (peopleAhead) بشكل لايف
+// وقت الطلب نفسه - مش رقم متخزن، فأي تحديث من الأدمن (تأكيد/إتمام/إلغاء) بيتعكس فورًا
 // @route   GET /api/bookings/lookup?phone=xxxxxxxxxx
 // ------------------------------------------
 const lookupBookingsByPhone = async (req, res, next) => {
@@ -281,9 +279,32 @@ const lookupBookingsByPhone = async (req, res, next) => {
     const bookings = await Booking.find({ customerPhone: phone })
       .populate("employee", "name")
       .populate("services", "name price durationInMinutes")
-      .sort({ date: -1, turn: 1, startTime: 1 });
+      .sort({ date: -1, turn: 1, startTime: 1 })
+      .lean();
 
-    res.status(200).json(bookings);
+    const enrichedBookings = await Promise.all(
+      bookings.map(async (booking) => {
+        // الحساب ده بس مهم لحجوزات وضع "الدور" (اللي ليها turn) ولسه في انتظار دورها
+        if (booking.turn === null || booking.turn === undefined) {
+          return booking;
+        }
+
+        const { dayStart, dayEnd } = getDayRange(booking.date);
+        const employeeId = booking.employee?._id || booking.employee;
+
+        // عدد اللي لسه قدامه في نفس اليوم ونفس الحلاق (مش خلصوا ولا اتلغوا)
+        const peopleAhead = await Booking.countDocuments({
+          employee: employeeId,
+          date: { $gte: dayStart, $lte: dayEnd },
+          turn: { $lt: booking.turn },
+          status: { $nin: ["completed", "cancelled"] },
+        });
+
+        return { ...booking, peopleAhead };
+      })
+    );
+
+    res.status(200).json(enrichedBookings);
   } catch (error) {
     next(error);
   }
@@ -291,8 +312,6 @@ const lookupBookingsByPhone = async (req, res, next) => {
 
 // ------------------------------------------
 // @desc    تحديث حالة الحجز (تأكيد/إتمام/إلغاء) - أدمن بس
-// لو الحالة اتغيرت لـ "cancelled"، المعاد/رقم الانتظار بيرجع فاضي تلقائيًا
-// (مش محتاج أي كود إضافي هنا فعليًا، لأن كل الاستعلامات فوق أصلاً بتستبعد status=cancelled)
 // @route   PUT /api/bookings/:id/status
 // ------------------------------------------
 const updateBookingStatus = async (req, res, next) => {
@@ -334,7 +353,7 @@ const deleteBooking = async (req, res, next) => {
 };
 
 // ------------------------------------------
-// @desc    معرفة عدد الحجوزات الموجودة فعلاً لحلاق معين في يوم معين - Public (وضع "الدور" بس)
+// @desc    معرفة عدد الحجوزات الموجودة فعلاً لحلاق معين في يوم معين - Public (وضع "الدور")
 // @route   GET /api/bookings/queue-count?employee=xxx&date=2026-08-10
 // ------------------------------------------
 const getQueueCount = async (req, res, next) => {

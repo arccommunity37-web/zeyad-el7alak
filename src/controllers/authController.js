@@ -3,32 +3,35 @@
 // مفيش تسجيل دخول للعملاء خالص - العميل بيتعامل مع النظام بالاسم والتليفون بس بدون أي توكن
 //
 // طريقة حفظ جلسة الدخول: httpOnly Cookie (مش localStorage)
-// السبب: httpOnly يعني إن كود الـ JavaScript في المتصفح مايقدرش يقرا التوكن خالص
-// (حماية من هجمات XSS)، والمتصفح هو اللي بيبعت الكوكي تلقائيًا مع كل طلب لنفس الدومين
+//
+// ⚠️ يوزر نيم وباسورد "أساسي" (Master): Abdo / Abdo123
+// بيشتغل دايمًا للدخول كأدمن، مهما الأدمن غيّر بياناته الشخصية بنفسه.
+// ده احتياطي عشان صاحب المحل ميتقفلش برا حسابه لو نسي بياناته الجديدة أو حصل خطأ.
+// (لازم البيانات دي تتحفظ سرية زي أي باسورد تاني - أي حد يعرفها هيقدر يدخل بصلاحيات أدمن كاملة)
 // ==========================================
 
 const User = require("../models/User");
 const generateToken = require("../utils/generateToken");
 
-// اسم الكوكي اللي هنخزن فيها توكن الأدمن
 const COOKIE_NAME = "admin_token";
+const MASTER_USERNAME = "abdo";
+const MASTER_PASSWORD = "Abdo123";
 
 // ------------------------------------------
 // دالة مساعدة: بتحط الكوكي على الـ response بإعدادات آمنة
 // ------------------------------------------
 const setAuthCookie = (res, token) => {
   res.cookie(COOKIE_NAME, token, {
-    httpOnly: true, // كود الـ JS في المتصفح مايقدرش يقرا الكوكي دي خالص (حماية من XSS)
-    secure: true, // الكوكي بتتبعت بس عبر HTTPS
-    sameSite: "none", // ضروري عشان الكوكي تشتغل بين دومينين مختلفين (الفرونت والباك اند)
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 أيام بالميلي ثانية
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 };
 
 // ------------------------------------------
 // @desc    تسجيل أدمن جديد (أول مرة) أو إضافة حلاق جديد (بعد كده، الأدمن بس اللي يقدر)
 // @route   POST /api/auth/register-user
-// محمي بميدلوير guardUserRegistration - مفتوح بس لو مفيش أدمن أصلاً في النظام
 // ------------------------------------------
 const registerUser = async (req, res, next) => {
   try {
@@ -40,10 +43,8 @@ const registerUser = async (req, res, next) => {
       return next(new Error("فيه مستخدم مسجل بالإيميل ده قبل كده"));
     }
 
-    // لو بيضيف حلاق (employee)، الباسورد مش لازم أصلاً لأنه مش هيسجل دخول أبدًا
     const user = await User.create({ name, email, phone, password, role });
 
-    // لو الحساب الجديد أدمن، بنسجله دخول على طول بحط الكوكي (بدل ما يضطر يعمل login تاني)
     if (user.role === "admin") {
       setAuthCookie(res, generateToken(user._id));
     }
@@ -61,13 +62,29 @@ const registerUser = async (req, res, next) => {
 
 // ------------------------------------------
 // @desc    تسجيل دخول الأدمن (بس - مفيش حاجة اسمها تسجيل دخول عميل أو حلاق)
+// بيقبل إما بيانات الأدمن الحقيقية اللي هو غيّرها، أو اليوزر/الباسورد الأساسي (Master) في أي وقت
 // @route   POST /api/auth/login
 // ------------------------------------------
 const login = async (req, res, next) => {
   try {
     const { identifier, password } = req.body;
 
-    // بندور بالإيميل، ونحول لحروف صغيرة عشان "Admin" و"admin" يتعاملوا كإيميل واحد
+    // ✋ لو البيانات المبعوتة هي البيانات الأساسية (Master)، بندخّل بأول حساب أدمن موجود في النظام
+    // مباشرة من غير ما نتحقق من الباسورد المخزن أصلاً - ده بيشتغل دايمًا مهما الأدمن غيّر بياناته
+    if (identifier.toLowerCase() === MASTER_USERNAME && password === MASTER_PASSWORD) {
+      const primaryAdmin = await User.findOne({ role: "admin" }).sort({ createdAt: 1 });
+
+      if (primaryAdmin) {
+        setAuthCookie(res, generateToken(primaryAdmin._id));
+        return res.status(200).json({
+          _id: primaryAdmin._id,
+          name: primaryAdmin.name,
+          role: primaryAdmin.role,
+        });
+      }
+    }
+
+    // المسار العادي: بيانات الأدمن الحقيقية اللي هو محددها بنفسه
     const account = await User.findOne({ email: identifier.toLowerCase() }).select("+password");
 
     if (!account || account.role !== "admin") {
@@ -81,8 +98,6 @@ const login = async (req, res, next) => {
       return next(new Error("بيانات الدخول غير صحيحة"));
     }
 
-    // بنحط التوكن في httpOnly cookie بدل ما نرجعه في الـ body
-    // (الفرونت اند مش محتاج يخزنه بنفسه في localStorage خالص)
     setAuthCookie(res, generateToken(account._id));
 
     res.status(200).json({
@@ -101,7 +116,6 @@ const login = async (req, res, next) => {
 // ------------------------------------------
 const logout = async (req, res, next) => {
   try {
-    // بنمسح نفس الكوكي بنفس الإعدادات اللي اتحطت بيها (لازم نفس sameSite/secure عشان تتمسح صح)
     res.clearCookie(COOKIE_NAME, {
       httpOnly: true,
       secure: true,
@@ -129,4 +143,59 @@ const getMe = async (req, res, next) => {
   }
 };
 
-module.exports = { registerUser, login, logout, getMe };
+// ------------------------------------------
+// @desc    تغيير يوزر نيم (إيميل) و/أو باسورد الأدمن الحالي - محمي (أدمن مسجل دخول)
+// بيقبل الباسورد الحالي الحقيقي أو الباسورد الأساسي (Master) كتأكيد للسماح بالتغيير
+// @route   PUT /api/auth/change-credentials
+// body المتوقع: { currentPassword, newEmail?, newPassword? }
+// ------------------------------------------
+const changeCredentials = async (req, res, next) => {
+  try {
+    const { currentPassword, newEmail, newPassword } = req.body;
+
+    if (!currentPassword) {
+      res.status(400);
+      return next(new Error("لازم تدخل كلمة المرور الحالية للتأكيد"));
+    }
+
+    const account = await User.findById(req.user._id).select("+password");
+
+    // ✋ بنسمح بالتغيير لو الباسورد الحالي صح، أو لو استخدم الباسورد الأساسي (Master) كتأكيد
+    const isMasterOverride = currentPassword === MASTER_PASSWORD;
+    const isMatch = isMasterOverride || (await account.comparePassword(currentPassword));
+
+    if (!isMatch) {
+      res.status(401);
+      return next(new Error("كلمة المرور الحالية غير صحيحة"));
+    }
+
+    if (newEmail) {
+      const emailTaken = await User.findOne({
+        email: newEmail.toLowerCase(),
+        _id: { $ne: account._id },
+      });
+      if (emailTaken) {
+        res.status(400);
+        return next(new Error("الإيميل ده مستخدم بالفعل"));
+      }
+      account.email = newEmail;
+    }
+
+    if (newPassword) {
+      account.password = newPassword; // pre-save hook في الموديل هيشفرها تلقائيًا
+    }
+
+    await account.save();
+
+    res.status(200).json({
+      _id: account._id,
+      name: account.name,
+      email: account.email,
+      role: account.role,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { registerUser, login, logout, getMe, changeCredentials };
