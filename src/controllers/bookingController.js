@@ -89,6 +89,13 @@ const createBooking = async (req, res, next) => {
     const totalPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
 
     const settings = await getOrCreateSettings();
+    
+    // ✋ لو الحجز متوقف يدويا من الأدمن، نمنع أي حجز جديد
+    if (settings.isBookingPaused) {
+      res.status(409);
+      return next(new Error("تم إيقاف الحجز اليوم، نعتذر لك ونلقاك غداً"));
+    }
+
     // ✋ هنا الفرق المهم: بنجيب طريقة الحجز الفعلية لليوم ده بالذات (ممكن يكون ليه استثناء خاص)
     const effectiveMode = await getEffectiveModeForDate(date);
     const { dayStart, dayEnd } = getDayRange(date);

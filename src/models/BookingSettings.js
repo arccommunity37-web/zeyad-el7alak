@@ -46,6 +46,11 @@ const bookingSettingsSchema = new mongoose.Schema(
       default: 30,
       min: [5, "مدة الحجز لازم تكون 5 دقايق على الأقل"],
     },
+    // هل الحجز متوقف اليوم؟ (لو الأدمن وقفه يدويا)
+    isBookingPaused: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );

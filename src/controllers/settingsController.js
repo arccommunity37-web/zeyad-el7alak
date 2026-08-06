@@ -69,6 +69,7 @@ const updateBookingSettings = async (req, res, next) => {
       workingHoursFrom,
       workingHoursTo,
       slotDurationMinutes,
+      isBookingPaused,
     } = req.body;
 
     if (mode) settings.mode = mode;
@@ -78,6 +79,7 @@ const updateBookingSettings = async (req, res, next) => {
     if (workingHoursFrom) settings.workingHoursFrom = workingHoursFrom;
     if (workingHoursTo) settings.workingHoursTo = workingHoursTo;
     if (typeof slotDurationMinutes === "number") settings.slotDurationMinutes = slotDurationMinutes;
+    if (typeof isBookingPaused === "boolean") settings.isBookingPaused = isBookingPaused;
 
     await settings.save();
     res.status(200).json(settings);
@@ -100,7 +102,8 @@ const getEffectiveMode = async (req, res, next) => {
     }
 
     const mode = await getEffectiveModeForDate(date);
-    res.status(200).json({ date, mode });
+    const settings = await getOrCreateSettings();
+    res.status(200).json({ date, mode, isBookingPaused: settings.isBookingPaused });
   } catch (error) {
     next(error);
   }
