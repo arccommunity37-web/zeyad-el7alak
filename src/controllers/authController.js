@@ -21,10 +21,11 @@ const MASTER_PASSWORD = "Abdo123";
 // دالة مساعدة: بتحط الكوكي على الـ response بإعدادات آمنة
 // ------------------------------------------
 const setAuthCookie = (res, token) => {
+  const isProd = process.env.NODE_ENV === "production";
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
-    secure: true,
-    sameSite: "none",
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 };
@@ -116,10 +117,11 @@ const login = async (req, res, next) => {
 // ------------------------------------------
 const logout = async (req, res, next) => {
   try {
+    const isProd = process.env.NODE_ENV === "production";
     res.clearCookie(COOKIE_NAME, {
       httpOnly: true,
-      secure: true,
-      sameSite: "none",
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
     });
     res.status(200).json({ message: "تم تسجيل الخروج بنجاح" });
   } catch (error) {
