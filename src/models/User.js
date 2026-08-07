@@ -2,6 +2,8 @@
 // موديل User: بيمثل صاحب المحل (admin) أو الحلاق/الموظف (employee)
 // مهم: تسجيل الدخول الفعلي متاح للأدمن بس. الحلاقين بيتحطوا كبيانات بس (الأدمن هو اللي بيضيفهم)
 // عشان كده الباسورد بقى اختياري - الحلاق ممكن يتعمله بدون باسورد لأنه أصلاً مش هيسجل دخول أبدًا
+//
+// ملحوظة: مفيش إيميل خالص في النظام - بدل "email" بقى فيه "username" (نص عادي، مش لازم يكون بصيغة إيميل)
 // ==========================================
 
 const mongoose = require("mongoose");
@@ -14,9 +16,9 @@ const userSchema = new mongoose.Schema(
       required: [true, "الاسم مطلوب"],
       trim: true,
     },
-    email: {
+    username: {
       type: String,
-      required: [true, "البريد الإلكتروني مطلوب"], // بيستخدمه الأدمن كـ يوزر نيم لتسجيل الدخول
+      required: [true, "اليوزر نيم مطلوب"], // بيستخدمه الأدمن للدخول - نص عادي، مش إيميل
       unique: true,
       lowercase: true,
       trim: true,
@@ -29,8 +31,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       minlength: 6,
       select: false,
-      // ملحوظة: الباسورد بقى اختياري (مش required) عشان نقدر نضيف حلاقين (employee)
-      // من غير ما نجبرهم يبقى ليهم باسورد، لأنهم أصلاً مش هيسجلوا دخول أبدًا
+      // اختياري - الحلاق ممكن يتعمله من غيره لأنه مش هيسجل دخول أبدًا
     },
     role: {
       type: String,
@@ -46,11 +47,15 @@ const userSchema = new mongoose.Schema(
       to: { type: String, default: "22:00" },
       daysOff: { type: [String], default: [] },
     },
-    // مدة الحجز الواحد بالدقايق - كل حلاق ليها قيمة مستقلة (مستخدمة بس في وضع "الحجز بالوقت")
     slotDurationMinutes: {
       type: Number,
       default: 30,
       min: [5, "مدة الحجز لازم تكون 5 دقايق على الأقل"],
+    },
+    // صورة بروفايل الحلاق (اختيارية) - بترفع على Cloudinary زي صور المنتجات بالظبط
+    image: {
+      url: { type: String, default: "" },
+      publicId: { type: String, default: "" },
     },
     isActive: {
       type: Boolean,
@@ -62,7 +67,6 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// تشفير الباسورد قبل الحفظ - بس لو فيه باسورد أصلاً (الحلاق ممكن يتعمله من غيره)
 userSchema.pre("save", async function (next) {
   if (!this.password || !this.isModified("password")) {
     return next();
@@ -72,9 +76,8 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
-// مقارنة الباسورد وقت تسجيل الدخول (مستخدمة للأدمن بس فعليًا)
 userSchema.methods.comparePassword = async function (enteredPassword) {
-  if (!this.password) return false; // لو مفيش باسورد أصلاً (حلاق)، مينفعش يسجل دخول خالص
+  if (!this.password) return false;
   return await bcrypt.compare(enteredPassword, this.password);
 };
 

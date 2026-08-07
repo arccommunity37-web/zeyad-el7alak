@@ -17,6 +17,8 @@ const productRoutes = require("./routes/productRoutes");
 const reservationRoutes = require("./routes/reservationRoutes");
 const settingsRoutes = require("./routes/settingsRoutes");
 const saleRoutes = require("./routes/saleRoutes");
+const announcementRoutes = require("./routes/announcementRoutes");
+const contactLinkRoutes = require("./routes/contactLinkRoutes");
 const errorHandler = require("./middlewares/errorHandler");
 
 const app = express();
@@ -58,6 +60,8 @@ app.use("/api/products", productRoutes);
 app.use("/api/product-reservations", reservationRoutes);
 app.use("/api/sales", saleRoutes);
 app.use("/api/settings", settingsRoutes);
+app.use("/api/announcements", announcementRoutes);
+app.use("/api/contact-links", contactLinkRoutes);
 
 // راوت بسيط للتأكد إن السيرفر شغال (مفيد تجربه في المتصفح مباشرة)
 app.get("/", (req, res) => {

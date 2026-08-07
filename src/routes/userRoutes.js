@@ -8,17 +8,19 @@ const {
   getUsers,
   getUserById,
   updateUser,
+  updateUserImage,
   deactivateUser,
   getPublicEmployees,
 } = require("../controllers/userController");
 const { protect } = require("../middlewares/authMiddleware");
+const upload = require("../middlewares/uploadMiddleware");
 
-// راوت عام (Public) - العميل محتاجه عشان يختار حلاق وقت الحجز
-router.get("/employees", getPublicEmployees);
+router.get("/employees", getPublicEmployees); // Public
 
 router.get("/", protect, getUsers);
 router.get("/:id", protect, getUserById);
 router.put("/:id", protect, updateUser);
+router.post("/:id/image", protect, upload.single("image"), updateUserImage);
 router.delete("/:id", protect, deactivateUser);
 
 module.exports = router;

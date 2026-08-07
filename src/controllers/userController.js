@@ -1,19 +1,33 @@
 // ==========================================
 // الكنترولر ده مسؤول عن إدارة الموظفين (الحلاقين) من قبل الأدمن
-// كل الـ endpoints هنا لازم تكون محمية بـ authorize("admin") في الـ routes
 // ==========================================
 
+const stream = require("stream");
 const User = require("../models/User");
+const cloudinary = require("../config/cloudinary");
+
+// دالة رفع الصورة على Cloudinary - نفس الفكرة المستخدمة في باقي الكنترولرز
+const uploadBufferToCloudinary = (buffer, folder) => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream({ folder }, (error, result) => {
+      if (error) return reject(error);
+      resolve(result);
+    });
+    const bufferStream = new stream.PassThrough();
+    bufferStream.end(buffer);
+    bufferStream.pipe(uploadStream);
+  });
+};
 
 // ------------------------------------------
 // @desc    عرض قايمة الحلاقين المتاحين (Public) - العميل يحتاجها وقت اختيار الحلاق في صفحة الحجز
 // @route   GET /api/users/employees
-// بنرجع بيانات محدودة بس (الاسم، التخصصات، ساعات العمل) من غير أي بيانات حساسة
+// بنرجع بيانات محدودة بس (الاسم، الصورة، التخصصات، ساعات العمل) من غير أي بيانات حساسة
 // ------------------------------------------
 const getPublicEmployees = async (req, res, next) => {
   try {
     const employees = await User.find({ role: "employee", isActive: true }).select(
-      "name specialties workingHours"
+      "name specialties workingHours image"
     );
     res.status(200).json(employees);
   } catch (error) {
@@ -27,8 +41,6 @@ const getPublicEmployees = async (req, res, next) => {
 // ------------------------------------------
 const getUsers = async (req, res, next) => {
   try {
-    // افتراضيًا بنرجع الحلاقين النشطين بس (isActive: true)
-    // لو الأدمن عايز يشوف المعطّلين كمان، يبعت ?all=true
     const filter = req.query.all === "true" ? {} : { isActive: true };
     const users = await User.find(filter);
     res.status(200).json(users);
@@ -55,7 +67,7 @@ const getUserById = async (req, res, next) => {
 };
 
 // ------------------------------------------
-// @desc    تعديل بيانات موظف (الاسم، ساعات العمل، التخصصات...)
+// @desc    تعديل بيانات موظف (الاسم، ساعات العمل، التخصصات، اليوزر نيم...)
 // @route   PUT /api/users/:id
 // ------------------------------------------
 const updateUser = async (req, res, next) => {
@@ -66,10 +78,11 @@ const updateUser = async (req, res, next) => {
       return next(new Error("الموظف غير موجود"));
     }
 
-    // بنحدث بس الحقول اللي اتبعتت، والباقي يفضل زي ما هو
-    const { name, phone, specialties, workingHours, isActive, slotDurationMinutes } = req.body;
+    const { name, username, phone, specialties, workingHours, isActive, slotDurationMinutes } =
+      req.body;
 
     if (name) user.name = name;
+    if (username) user.username = username;
     if (phone) user.phone = phone;
     if (specialties) user.specialties = specialties;
     if (workingHours) user.workingHours = { ...user.workingHours, ...workingHours };
@@ -84,7 +97,39 @@ const updateUser = async (req, res, next) => {
 };
 
 // ------------------------------------------
-// @desc    تعطيل موظف (مش حذف نهائي - عشان البيانات التاريخية متتأثرش)
+// @desc    رفع/تحديث صورة بروفايل الحلاق - أدمن بس
+// @route   POST /api/users/:id/image
+// ------------------------------------------
+const updateUserImage = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      res.status(404);
+      return next(new Error("الموظف غير موجود"));
+    }
+
+    if (!req.file) {
+      res.status(400);
+      return next(new Error("لازم ترفع صورة"));
+    }
+
+    // لو كان ليه صورة قديمة، بنحذفها من Cloudinary الأول
+    if (user.image && user.image.publicId) {
+      await cloudinary.uploader.destroy(user.image.publicId);
+    }
+
+    const result = await uploadBufferToCloudinary(req.file.buffer, "barbershop/employees");
+    user.image = { url: result.secure_url, publicId: result.public_id };
+    await user.save();
+
+    res.status(200).json(user);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ------------------------------------------
+// @desc    تعطيل موظف (مش حذف نهائي)
 // @route   DELETE /api/users/:id
 // ------------------------------------------
 const deactivateUser = async (req, res, next) => {
@@ -95,8 +140,6 @@ const deactivateUser = async (req, res, next) => {
       return next(new Error("الموظف غير موجود"));
     }
 
-    // بدل ما نمسحه خالص من الداتا بيز، بنعطله بس
-    // كده لو ليه حجوزات أو فواتير قديمة، تفضل موجودة وواضحة
     user.isActive = false;
     await user.save();
 
@@ -106,4 +149,11 @@ const deactivateUser = async (req, res, next) => {
   }
 };
 
-module.exports = { getUsers, getUserById, updateUser, deactivateUser, getPublicEmployees };
+module.exports = {
+  getUsers,
+  getUserById,
+  updateUser,
+  updateUserImage,
+  deactivateUser,
+  getPublicEmployees,
+};

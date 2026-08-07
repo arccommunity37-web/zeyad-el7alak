@@ -1,13 +1,15 @@
 // ==========================================
-// موديل Booking: بيمثل حجز - وبيدعم وضعين مختلفين حسب إعدادات المحل الحالية (BookingSettings.mode):
+// موديل Booking: بيمثل حجز - وبيدعم وضعين مختلفين حسب "طريقة الحجز الفعلية لليوم":
 //
-// وضع "الدور" (queue): بيتملى حقل turn بس (رقم الدور في اليوم ده مع الحلاق ده)
-// وضع "الوقت" (time): بيتملى إما startTime (معاد حقيقي)، أو isWaiting+waitingPosition (رقم في قايمة الانتظار)
+// وضع "الدور" (queue): بيتملى حقل turn بس
+// وضع "الوقت" (time): بيتملى إما startTime، أو isWaiting+waitingPosition
 //
-// أي حجز بيتعمل بياخد شكل واحد بس حسب الوضع اللي كان شغال وقتها - مفيش تعارض بين الحقول
+// كمان بيدعم كلمة سر اختيارية (cancelPassword) - لو العميل حطها وقت الحجز، بيحتاجها
+// لو حب يعدل أو يلغي حجزه بنفسه بعدين. لو ماحطهاش، أي تعديل/إلغاء ذاتي بيبقى بس برقم التليفون
 // ==========================================
 
 const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
 
 const bookingSchema = new mongoose.Schema(
   {
@@ -26,6 +28,12 @@ const bookingSchema = new mongoose.Schema(
       required: [true, "رقم تليفون العميل مطلوب"],
       trim: true,
     },
+    // كلمة سر اختيارية بيحددها العميل وقت الحجز - مشفرة زي أي باسورد عادي
+    cancelPassword: {
+      type: String,
+      select: false, // ما ترجعش في أي رد عادي خالص
+      default: null,
+    },
     employee: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -43,29 +51,10 @@ const bookingSchema = new mongoose.Schema(
       required: [true, "تاريخ الحجز مطلوب"],
     },
 
-    // ---------- حقول وضع "الدور" ----------
-    // رقم دور العميل في الطابور بتاع نفس الحلاق في نفس اليوم (1، 2، 3...)
-    turn: {
-      type: Number,
-      default: null,
-    },
-
-    // ---------- حقول وضع "الوقت" ----------
-    // المعاد المحدد (لو العميل حجز معاد حقيقي متاح) - صيغة "HH:mm"
-    startTime: {
-      type: String,
-      default: null,
-    },
-    // هل الحجز ده في قايمة الانتظار بدل معاد حقيقي؟
-    isWaiting: {
-      type: Boolean,
-      default: false,
-    },
-    // رقم مكان العميل في قايمة الانتظار (1، 2، 3...) - موجود بس لو isWaiting=true
-    waitingPosition: {
-      type: Number,
-      default: null,
-    },
+    turn: { type: Number, default: null },
+    startTime: { type: String, default: null },
+    isWaiting: { type: Boolean, default: false },
+    waitingPosition: { type: Number, default: null },
 
     status: {
       type: String,
@@ -84,5 +73,21 @@ const bookingSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// بنشفر كلمة سر الإلغاء قبل الحفظ - بس لو فيها قيمة أصلاً واتغيرت
+bookingSchema.pre("save", async function (next) {
+  if (!this.cancelPassword || !this.isModified("cancelPassword")) {
+    return next();
+  }
+  const salt = await bcrypt.genSalt(10);
+  this.cancelPassword = await bcrypt.hash(this.cancelPassword, salt);
+  next();
+});
+
+// مقارنة كلمة سر الإلغاء
+bookingSchema.methods.compareCancelPassword = async function (enteredPassword) {
+  if (!this.cancelPassword) return false;
+  return await bcrypt.compare(enteredPassword, this.cancelPassword);
+};
 
 module.exports = mongoose.model("Booking", bookingSchema);
