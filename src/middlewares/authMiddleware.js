@@ -11,7 +11,7 @@ const protect = async (req, res, next) => {
   // الأولوية للتوكن اللي جاي من الكوكي (طريقة الفرونت اند الرسمية دلوقتي)
   let token = req.cookies?.admin_token;
 
-  // fallback: لو مفيش كوكي، نقبل الهيدر التقليدي "Authorization: Bearer xxx"
+  // fallback: لو مفيش كوكي، نقبل الهيدر التقليدي "Authorization: Bearer   xxx"
   // (مفيد لو حد بيختبر الـ API مباشرة بأداة زي Postman من غير متصفح)
   if (!token && req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
     token = req.headers.authorization.split(" ")[1];
