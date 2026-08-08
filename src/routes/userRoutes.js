@@ -10,6 +10,7 @@ const {
   updateUser,
   updateUserImage,
   deactivateUser,
+  deleteUserPermanently,
   getPublicEmployees,
 } = require("../controllers/userController");
 const { protect } = require("../middlewares/authMiddleware");
@@ -21,6 +22,7 @@ router.get("/", protect, getUsers);
 router.get("/:id", protect, getUserById);
 router.put("/:id", protect, updateUser);
 router.post("/:id/image", protect, upload.single("image"), updateUserImage);
-router.delete("/:id", protect, deactivateUser);
+router.delete("/:id", protect, deactivateUser); // تعطيل (Soft)
+router.delete("/:id/permanent", protect, deleteUserPermanently); // حذف نهائي (Hard)
 
 module.exports = router;

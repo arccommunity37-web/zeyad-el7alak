@@ -149,11 +149,39 @@ const deactivateUser = async (req, res, next) => {
   }
 };
 
+// ------------------------------------------
+// @desc    حذف موظف نهائيًا من قاعدة البيانات - أدمن بس
+// بيحذف صورته من Cloudinary كمان لو موجودة. ملحوظة: الحجوزات والفواتير القديمة
+// اللي كانت مرتبطة بالحلاق ده هتفضل موجودة (فيها اسمه وقت الحجز كنص محفوظ مسبقًا)،
+// بس مش هيبقى ليها مرجع حي في جدول الحلاقين
+// @route   DELETE /api/users/:id/permanent
+// ------------------------------------------
+const deleteUserPermanently = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      res.status(404);
+      return next(new Error("الموظف غير موجود"));
+    }
+
+    if (user.image && user.image.publicId) {
+      await cloudinary.uploader.destroy(user.image.publicId);
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+
+    res.status(200).json({ message: "تم حذف الموظف نهائيًا من قاعدة البيانات" });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getUsers,
   getUserById,
   updateUser,
   updateUserImage,
   deactivateUser,
+  deleteUserPermanently,
   getPublicEmployees,
 };
