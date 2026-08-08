@@ -1,22 +1,17 @@
 // ==========================================
-// الكنترولر ده مسؤول عن إشعارات/تنبيهات المحل اللي بتظهر للعملاء في فترة زمنية محددة
+// الكنترولر ده مسؤول عن إشعارات/تنبيهات المحل - نص بيفضل ظاهر لحد ما الأدمن يعدله أو يمسحه
 // ==========================================
 
 const Announcement = require("../models/Announcement");
 
 // ------------------------------------------
-// @desc    عرض الإشعارات الفعّالة دلوقتي بالظبط (الوقت الحالي بين startAt وendAt) - Public
-// الفرونت اند بينادي الـ endpoint ده في كل صفحات العميل عشان يعرض الشريط المتحرك لو فيه إشعار شغال
+// @desc    عرض الإشعارات المفعّلة دلوقتي - Public
+// الفرونت اند بينادي الـ endpoint ده في كل صفحات العميل عشان يعرض الشريط المتحرك
 // @route   GET /api/announcements/active
 // ------------------------------------------
 const getActiveAnnouncements = async (req, res, next) => {
   try {
-    const now = new Date();
-    const announcements = await Announcement.find({
-      startAt: { $lte: now },
-      endAt: { $gte: now },
-    }).sort({ startAt: 1 });
-
+    const announcements = await Announcement.find({ isActive: true }).sort({ createdAt: -1 });
     res.status(200).json(announcements);
   } catch (error) {
     next(error);
@@ -24,12 +19,12 @@ const getActiveAnnouncements = async (req, res, next) => {
 };
 
 // ------------------------------------------
-// @desc    عرض كل الإشعارات (شغالة وقديمة ومستقبلية) - أدمن بس
+// @desc    عرض كل الإشعارات (مفعّلة ومخفية) - أدمن بس
 // @route   GET /api/announcements
 // ------------------------------------------
 const getAllAnnouncements = async (req, res, next) => {
   try {
-    const announcements = await Announcement.find({}).sort({ startAt: -1 });
+    const announcements = await Announcement.find({}).sort({ createdAt: -1 });
     res.status(200).json(announcements);
   } catch (error) {
     next(error);
@@ -39,18 +34,18 @@ const getAllAnnouncements = async (req, res, next) => {
 // ------------------------------------------
 // @desc    إنشاء إشعار جديد - أدمن بس
 // @route   POST /api/announcements
-// body: { message, startAt, endAt }
+// body: { message }
 // ------------------------------------------
 const createAnnouncement = async (req, res, next) => {
   try {
-    const { message, startAt, endAt } = req.body;
+    const { message } = req.body;
 
-    if (!message || !startAt || !endAt) {
+    if (!message) {
       res.status(400);
-      return next(new Error("النص ووقت البداية ووقت النهاية كلهم مطلوبين"));
+      return next(new Error("نص الإشعار مطلوب"));
     }
 
-    const announcement = await Announcement.create({ message, startAt, endAt });
+    const announcement = await Announcement.create({ message });
     res.status(201).json(announcement);
   } catch (error) {
     next(error);
@@ -58,8 +53,9 @@ const createAnnouncement = async (req, res, next) => {
 };
 
 // ------------------------------------------
-// @desc    تعديل إشعار - أدمن بس
+// @desc    تعديل إشعار (النص و/أو إخفاءه مؤقتًا) - أدمن بس
 // @route   PUT /api/announcements/:id
+// body: { message?, isActive? }
 // ------------------------------------------
 const updateAnnouncement = async (req, res, next) => {
   try {
@@ -69,10 +65,9 @@ const updateAnnouncement = async (req, res, next) => {
       return next(new Error("الإشعار غير موجود"));
     }
 
-    const { message, startAt, endAt } = req.body;
+    const { message, isActive } = req.body;
     if (message) announcement.message = message;
-    if (startAt) announcement.startAt = startAt;
-    if (endAt) announcement.endAt = endAt;
+    if (typeof isActive === "boolean") announcement.isActive = isActive;
 
     await announcement.save();
     res.status(200).json(announcement);
@@ -82,7 +77,7 @@ const updateAnnouncement = async (req, res, next) => {
 };
 
 // ------------------------------------------
-// @desc    حذف إشعار - أدمن بس
+// @desc    حذف إشعار نهائيًا - أدمن بس
 // @route   DELETE /api/announcements/:id
 // ------------------------------------------
 const deleteAnnouncement = async (req, res, next) => {
