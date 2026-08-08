@@ -70,11 +70,15 @@ const login = async (req, res, next) => {
       const primaryAdmin = await User.findOne({ role: "admin" }).sort({ createdAt: 1 });
 
       if (primaryAdmin) {
-        setAuthCookie(res, generateToken(primaryAdmin._id));
+        const token = generateToken(primaryAdmin._id);
+        setAuthCookie(res, token);
         return res.status(200).json({
           _id: primaryAdmin._id,
           name: primaryAdmin.name,
           role: primaryAdmin.role,
+          // بنرجع التوكن هنا كمان كخطة بديلة - بعض المتصفحات (زي Safari على آيفون)
+          // بتحظر الكوكيز الجاية من دومين تاني (Cross-Site) حتى لو معمولة صح
+          token,
         });
       }
     }
@@ -92,12 +96,14 @@ const login = async (req, res, next) => {
       return next(new Error("بيانات الدخول غير صحيحة"));
     }
 
-    setAuthCookie(res, generateToken(account._id));
+    const token = generateToken(account._id);
+    setAuthCookie(res, token);
 
     res.status(200).json({
       _id: account._id,
       name: account.name,
       role: account.role,
+      token,
     });
   } catch (error) {
     next(error);
