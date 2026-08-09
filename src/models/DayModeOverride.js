@@ -42,9 +42,18 @@ const dayModeOverrideSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    // مدة الموعد الواحد المخصصة لهذا اليوم (في وضع الوقت)
     slotDurationMinutes: {
       type: Number,
       default: null,
+      min: 5,
+    },
+
+    // سعة قائمة الانتظار لهذا اليوم (في وضع الوقت)
+    waitingListCapacity: {
+      type: Number,
+      default: null,
+      min: 0,
     },
   },
   { timestamps: true }

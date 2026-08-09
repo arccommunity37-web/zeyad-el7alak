@@ -39,6 +39,7 @@ const getEffectiveSettingsForDate = async (date) => {
     isClosed: globalSettings.isShopClosed || (override?.isClosed ?? false),
     queueLimitEnabled: override?.queueLimitEnabled ?? globalSettings.queueLimitEnabled,
     queueLimit: override?.queueLimit ?? globalSettings.queueLimit,
+    waitingListCapacity: override?.waitingListCapacity ?? globalSettings.waitingListCapacity,
     workingHoursFrom: override?.workingHoursFrom ?? globalSettings.workingHoursFrom,
     workingHoursTo: override?.workingHoursTo ?? globalSettings.workingHoursTo,
     slotDurationMinutes: override?.slotDurationMinutes ?? globalSettings.slotDurationMinutes,
@@ -137,6 +138,7 @@ const setDayOverride = async (req, res, next) => {
       isClosed,
       queueLimitEnabled,
       queueLimit,
+      waitingListCapacity,
       workingHoursFrom,
       workingHoursTo,
       slotDurationMinutes,
@@ -158,6 +160,7 @@ const setDayOverride = async (req, res, next) => {
     if (typeof isClosed === "boolean") update.isClosed = isClosed;
     if (typeof queueLimitEnabled === "boolean") update.queueLimitEnabled = queueLimitEnabled;
     if (typeof queueLimit === "number") update.queueLimit = queueLimit;
+    if (typeof waitingListCapacity === "number") update.waitingListCapacity = waitingListCapacity;
     if (workingHoursFrom) update.workingHoursFrom = workingHoursFrom;
     if (workingHoursTo) update.workingHoursTo = workingHoursTo;
     if (typeof slotDurationMinutes === "number") update.slotDurationMinutes = slotDurationMinutes;
