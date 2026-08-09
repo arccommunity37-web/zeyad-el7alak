@@ -91,7 +91,13 @@ const resolveBookingSlot = async ({
       throw err;
     }
 
-    return { turn: bookingsCountToday + 1, startTime: null, isWaiting: false, waitingPosition: null };
+    return {
+      turn: bookingsCountToday + 1,
+      startTime: null,
+      endTime: null,
+      isWaiting: false,
+      waitingPosition: null,
+    };
   }
 
   if (effectiveMode === "time") {
@@ -115,7 +121,9 @@ const resolveBookingSlot = async ({
         err.statusCode = 409;
         throw err;
       }
-      return { turn: null, startTime, isWaiting: false, waitingPosition: null };
+      // بنحسب وقت النهاية = وقت البداية + مدة الحجز الحالية لليوم ده، ونخزنه ثابت
+      const endTime = minutesToTime(timeToMinutes(startTime) + settings.slotDurationMinutes);
+      return { turn: null, startTime, endTime, isWaiting: false, waitingPosition: null };
     }
 
     if (waitingPosition) {
@@ -137,7 +145,7 @@ const resolveBookingSlot = async ({
         err.statusCode = 409;
         throw err;
       }
-      return { turn: null, startTime: null, isWaiting: true, waitingPosition };
+      return { turn: null, startTime: null, endTime: null, isWaiting: true, waitingPosition };
     }
 
     const err = new Error("لازم تحدد معاد أو مكان في قايمة الانتظار");
@@ -297,13 +305,25 @@ const customerUpdateBooking = async (req, res, next) => {
       const settings = await buildSlotSettings(newDate);
       const effectiveMode = settings.mode;
 
+      let finalStartTime = startTime;
+      let finalWaitingPosition = waitingPosition;
+
+      if (startTime === undefined && waitingPosition === undefined) {
+        finalStartTime = booking.startTime;
+        finalWaitingPosition = booking.waitingPosition;
+      } else if (startTime !== undefined && waitingPosition === undefined) {
+        finalWaitingPosition = null;
+      } else if (waitingPosition !== undefined && startTime === undefined) {
+        finalStartTime = null;
+      }
+
       const slot = await resolveBookingSlot({
         effectiveMode,
         employee: newEmployee,
         date: newDate,
         settings,
-        startTime,
-        waitingPosition,
+        startTime: finalStartTime,
+        waitingPosition: finalWaitingPosition,
         excludeBookingId: booking._id,
       });
 
@@ -613,13 +633,25 @@ const adminUpdateBooking = async (req, res, next) => {
       // لو الأدمن مش بيحدد رقم الدور يدوي، بنحسبه زي العميل بالظبط
       const settings = await buildSlotSettings(newDate);
       const effectiveMode = settings.mode;
+      let finalStartTime = startTime;
+      let finalWaitingPosition = waitingPosition;
+
+      if (startTime === undefined && waitingPosition === undefined) {
+        finalStartTime = booking.startTime;
+        finalWaitingPosition = booking.waitingPosition;
+      } else if (startTime !== undefined && waitingPosition === undefined) {
+        finalWaitingPosition = null;
+      } else if (waitingPosition !== undefined && startTime === undefined) {
+        finalStartTime = null;
+      }
+
       const slot = await resolveBookingSlot({
         effectiveMode,
         employee: newEmployee,
         date: newDate,
         settings,
-        startTime,
-        waitingPosition,
+        startTime: finalStartTime,
+        waitingPosition: finalWaitingPosition,
         excludeBookingId: booking._id,
       });
       Object.assign(booking, slot);
@@ -627,6 +659,13 @@ const adminUpdateBooking = async (req, res, next) => {
       // الأدمن يقدر يحط رقم دور يدوي مباشرة من غير أي تحقق (تحكم كامل)
       booking.turn = turn;
       booking.startTime = startTime || null;
+      // لو الأدمن حدد معاد يدوي، بنحسب وقت النهاية بنفس منطق مدة الحجز الحالية لليوم ده
+      if (startTime) {
+        const daySettings = await buildSlotSettings(newDate);
+        booking.endTime = minutesToTime(timeToMinutes(startTime) + daySettings.slotDurationMinutes);
+      } else {
+        booking.endTime = null;
+      }
       booking.isWaiting = Boolean(waitingPosition);
       booking.waitingPosition = waitingPosition || null;
     }

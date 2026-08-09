@@ -53,6 +53,9 @@ const bookingSchema = new mongoose.Schema(
 
     turn: { type: Number, default: null },
     startTime: { type: String, default: null },
+    // وقت نهاية المعاد - بيتحسب ويتخزن وقت الحجز (startTime + مدة الحجز وقتها)
+    // بنخزنه بدل ما نحسبه كل مرة، عشان يفضل ثابت حتى لو مدة الحجز في الإعدادات اتغيرت بعدين
+    endTime: { type: String, default: null },
     isWaiting: { type: Boolean, default: false },
     waitingPosition: { type: Number, default: null },
 
