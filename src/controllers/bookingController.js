@@ -422,7 +422,7 @@ const getTimeSlots = async (req, res, next) => {
 // ------------------------------------------
 const getBookings = async (req, res, next) => {
   try {
-    const { status, employee, date } = req.query;
+    const { status, employee, date, dateFrom, dateTo, upcoming } = req.query;
     const filter = {};
 
     if (status) {
@@ -431,15 +431,38 @@ const getBookings = async (req, res, next) => {
       filter.status = { $nin: ["completed", "cancelled"] };
     }
     if (employee) filter.employee = employee;
+
     if (date) {
+      // فلترة يوم واحد بالظبط
       const { dayStart, dayEnd } = getDayRange(date);
       filter.date = { $gte: dayStart, $lte: dayEnd };
+    } else if (dateFrom || dateTo || upcoming === "true") {
+      // فلترة بمدى تواريخ محدد يدويًا من الفرونت
+      const range = {};
+      if (upcoming === "true") {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        range.$gte = todayStart;
+      } else if (dateFrom) {
+        range.$gte = getDayRange(dateFrom).dayStart;
+      }
+      if (dateTo) {
+        range.$lte = getDayRange(dateTo).dayEnd;
+      }
+      filter.date = range;
+    } else if (!status) {
+      // ✋ الحالة الافتراضية (شاشة "الحجوزات الحالية" - من غير أي فلتر مبعوت):
+      // بس النهاردة وقدام. أي حجز يومه فات ولسه مش completed/cancelled، بيتحول تلقائيًا
+      // لبوكت "الأيام السابقة" (getBookingsHistory) بدل ما يفضل ظاهر هنا
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      filter.date = { $gte: todayStart };
     }
 
     const bookings = await Booking.find(filter)
       .populate("employee", "name")
       .populate("services", "name price durationInMinutes")
-      .sort({ date: -1, turn: 1, startTime: 1 });
+      .sort({ date: 1, turn: 1, startTime: 1 });
 
     res.status(200).json(bookings);
   } catch (error) {
@@ -457,7 +480,12 @@ const getBookingsHistory = async (req, res, next) => {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
-    const bookings = await Booking.find({ date: { $lt: todayStart } })
+    // "الأيام السابقة" = حجوزات يومها فات، ولسه مش completed ومش cancelled
+    // (يعني العميل لسه فاضل "pending"/"confirmed" رغم إن يومه خلص - يبان إنه محضرش)
+    const bookings = await Booking.find({
+      date: { $lt: todayStart },
+      status: { $nin: ["completed", "cancelled"] },
+    })
       .populate("employee", "name")
       .populate("services", "name price durationInMinutes")
       .sort({ date: -1, turn: 1, startTime: 1 });
