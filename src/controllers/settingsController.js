@@ -1,6 +1,6 @@
 // ==========================================
-// الكنترولر ده مسؤول عن إعدادات الحجز العامة (Singleton) + استثناءات كل يوم بالذات
-// (تغيير طريقة الحجز ليوم معين، و/أو قفل اليوم بالكامل من أي حجز)
+// الكنترولر ده مسؤول عن إعدادات الحجز العامة (Singleton) + إعدادات مخصصة لكل يوم بالذات
+// أي حقل الأدمن مايحددوش ليوم معين، بيرجع يستخدم القيمة العامة تلقائيًا
 // ==========================================
 
 const BookingSettings = require("../models/BookingSettings");
@@ -23,29 +23,39 @@ const formatDateKey = (date) => {
 };
 
 // ------------------------------------------
-// دالة مساعدة أساسية: بترجع طريقة الحجز "الفعلية" ليوم معين بالذات
+// ⭐ الدالة الأهم: بترجع "الإعدادات الفعلية الكاملة" ليوم معين بالذات
+// بتدمج بين استثناء اليوم (لو موجود) والإعداد العام - أي حقل مش محدد لليوم، بياخد القيمة العامة
+// bookingController بيستخدمها في كل حاجة (حجز جديد، عرض معادات، عرض عدد الدور...)
 // ------------------------------------------
-const getEffectiveModeForDate = async (date) => {
+const getEffectiveSettingsForDate = async (date) => {
   const dateKey = formatDateKey(date);
   const override = await DayModeOverride.findOne({ dateKey });
-  if (override && override.mode) return override.mode;
+  const globalSettings = await getOrCreateSettings();
 
-  const settings = await getOrCreateSettings();
+  return {
+    mode: override?.mode ?? globalSettings.mode,
+    isClosed: override?.isClosed ?? false,
+    queueLimitEnabled: override?.queueLimitEnabled ?? globalSettings.queueLimitEnabled,
+    queueLimit: override?.queueLimit ?? globalSettings.queueLimit,
+    workingHoursFrom: override?.workingHoursFrom ?? globalSettings.workingHoursFrom,
+    workingHoursTo: override?.workingHoursTo ?? globalSettings.workingHoursTo,
+    slotDurationMinutes: override?.slotDurationMinutes ?? globalSettings.slotDurationMinutes,
+  };
+};
+
+// دالة قديمة لسه مستخدمة في مكان أو اتنين - بترجع بس الوضع (queue/time) الفعلي لليوم
+const getEffectiveModeForDate = async (date) => {
+  const settings = await getEffectiveSettingsForDate(date);
   return settings.mode;
 };
 
-// ------------------------------------------
-// دالة مساعدة أساسية: بتتحقق هل يوم معين مقفول بالكامل ولا لأ
-// bookingController بيستخدمها قبل أي عملية حجز/عرض معادات
-// ------------------------------------------
 const isDateClosed = async (date) => {
-  const dateKey = formatDateKey(date);
-  const override = await DayModeOverride.findOne({ dateKey });
-  return Boolean(override && override.isClosed);
+  const settings = await getEffectiveSettingsForDate(date);
+  return Boolean(settings.isClosed);
 };
 
 // ------------------------------------------
-// @desc    عرض إعدادات الحجز العامة الحالية - Public
+// @desc    عرض إعدادات الحجز العامة الحالية (الافتراضية لكل الأيام) - Public
 // @route   GET /api/settings/booking
 // ------------------------------------------
 const getBookingSettings = async (req, res, next) => {
@@ -58,7 +68,7 @@ const getBookingSettings = async (req, res, next) => {
 };
 
 // ------------------------------------------
-// @desc    تحديث إعدادات الحجز العامة - أدمن بس
+// @desc    تحديث إعدادات الحجز العامة (الافتراضية) - أدمن بس
 // @route   PUT /api/settings/booking
 // ------------------------------------------
 const updateBookingSettings = async (req, res, next) => {
@@ -91,7 +101,8 @@ const updateBookingSettings = async (req, res, next) => {
 };
 
 // ------------------------------------------
-// @desc    عرض طريقة الحجز الفعلية وحالة القفل ليوم معين بالذات - Public
+// @desc    عرض الإعدادات الفعلية الكاملة ليوم معين بالذات - Public
+// العميل بيستخدمها يعرف يعرض واجهة إيه لليوم اللي هيختاره
 // @route   GET /api/settings/booking/effective?date=2026-08-10
 // ------------------------------------------
 const getEffectiveMode = async (req, res, next) => {
@@ -102,32 +113,34 @@ const getEffectiveMode = async (req, res, next) => {
       return next(new Error("التاريخ مطلوب"));
     }
 
-    const mode = await getEffectiveModeForDate(date);
-    const closed = await isDateClosed(date);
-
-    res.status(200).json({ date, mode, isClosed: closed });
+    const effective = await getEffectiveSettingsForDate(date);
+    res.status(200).json({ date, ...effective });
   } catch (error) {
     next(error);
   }
 };
 
 // ------------------------------------------
-// @desc    تحديد طريقة حجز مخصصة ليوم معين، و/أو قفله بالكامل - أدمن بس
+// @desc    تحديد إعدادات مخصصة ليوم معين بالذات (أي حقل منهم، أو كلهم مع بعض) - أدمن بس
 // @route   PUT /api/settings/booking/day-override
-// body المتوقع: { date, mode?, isClosed? } - لازم واحد منهم على الأقل
+// body: { date, mode?, isClosed?, queueLimitEnabled?, queueLimit?, workingHoursFrom?, workingHoursTo?, slotDurationMinutes? }
 // ------------------------------------------
 const setDayOverride = async (req, res, next) => {
   try {
-    const { date, mode, isClosed } = req.body;
+    const {
+      date,
+      mode,
+      isClosed,
+      queueLimitEnabled,
+      queueLimit,
+      workingHoursFrom,
+      workingHoursTo,
+      slotDurationMinutes,
+    } = req.body;
 
     if (!date) {
       res.status(400);
       return next(new Error("التاريخ مطلوب"));
-    }
-
-    if (mode === undefined && isClosed === undefined) {
-      res.status(400);
-      return next(new Error('لازم تحدد "mode" أو "isClosed" على الأقل'));
     }
 
     if (mode !== undefined && mode !== null && !["queue", "time"].includes(mode)) {
@@ -139,6 +152,11 @@ const setDayOverride = async (req, res, next) => {
     const update = {};
     if (mode !== undefined) update.mode = mode;
     if (typeof isClosed === "boolean") update.isClosed = isClosed;
+    if (typeof queueLimitEnabled === "boolean") update.queueLimitEnabled = queueLimitEnabled;
+    if (typeof queueLimit === "number") update.queueLimit = queueLimit;
+    if (workingHoursFrom) update.workingHoursFrom = workingHoursFrom;
+    if (workingHoursTo) update.workingHoursTo = workingHoursTo;
+    if (typeof slotDurationMinutes === "number") update.slotDurationMinutes = slotDurationMinutes;
 
     const override = await DayModeOverride.findOneAndUpdate(
       { dateKey },
@@ -153,21 +171,21 @@ const setDayOverride = async (req, res, next) => {
 };
 
 // ------------------------------------------
-// @desc    إلغاء الاستثناء الخاص بيوم معين بالكامل (يرجع اليوم مفتوح وبالوضع العام) - أدمن بس
+// @desc    إلغاء كل الإعدادات المخصصة ليوم معين (يرجع يستخدم الإعداد العام في كل حاجة) - أدمن بس
 // @route   DELETE /api/settings/booking/day-override/:date
 // ------------------------------------------
 const deleteDayOverride = async (req, res, next) => {
   try {
     const dateKey = formatDateKey(req.params.date);
     await DayModeOverride.findOneAndDelete({ dateKey });
-    res.status(200).json({ message: "تم إلغاء الاستثناء - اليوم رجع مفتوح وبيستخدم الوضع العام" });
+    res.status(200).json({ message: "تم إلغاء إعدادات اليوم المخصصة - رجع يستخدم الإعداد العام" });
   } catch (error) {
     next(error);
   }
 };
 
 // ------------------------------------------
-// @desc    عرض كل الاستثناءات المضبوطة حاليًا - أدمن بس
+// @desc    عرض كل الأيام اللي ليها إعدادات مخصصة - أدمن بس
 // @route   GET /api/settings/booking/day-overrides
 // ------------------------------------------
 const getAllDayOverrides = async (req, res, next) => {
@@ -183,6 +201,7 @@ module.exports = {
   getBookingSettings,
   updateBookingSettings,
   getOrCreateSettings,
+  getEffectiveSettingsForDate,
   getEffectiveModeForDate,
   isDateClosed,
   getEffectiveMode,

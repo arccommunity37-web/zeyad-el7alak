@@ -8,7 +8,7 @@ const Booking = require("../models/Booking");
 const Service = require("../models/Service");
 const Customer = require("../models/Customer");
 const User = require("../models/User");
-const { getOrCreateSettings, getEffectiveModeForDate, isDateClosed } = require("./settingsController");
+const { getOrCreateSettings, getEffectiveSettingsForDate, isDateClosed } = require("./settingsController");
 
 const timeToMinutes = (time) => {
   const [hours, minutes] = time.split(":").map(Number);
@@ -39,6 +39,14 @@ const generateTimeSlots = (workingHours, slotDurationMinutes) => {
     cursor += slotDurationMinutes;
   }
   return slots;
+};
+
+// بترجع كل الإعدادات المطلوبة ليوم معين في كائن واحد (تدمج بين استثناء اليوم والإعداد العام)
+// waitingListCapacity لسه إعداد عام بس (مش بيتخصص لكل يوم)
+const buildSlotSettings = async (date) => {
+  const effective = await getEffectiveSettingsForDate(date);
+  const globalSettings = await getOrCreateSettings();
+  return { ...effective, waitingListCapacity: globalSettings.waitingListCapacity };
 };
 
 const findOrCreateCustomer = async (customerName, customerPhone) => {
@@ -217,8 +225,8 @@ const createBooking = async (req, res, next) => {
     }
     const totalPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
 
-    const settings = await getOrCreateSettings();
-    const effectiveMode = await getEffectiveModeForDate(date);
+    const settings = await buildSlotSettings(date);
+    const effectiveMode = settings.mode;
 
     const slot = await resolveBookingSlot({
       effectiveMode,
@@ -286,8 +294,8 @@ const customerUpdateBooking = async (req, res, next) => {
         return next(new Error("اليوم ده مقفول، اختار يوم تاني"));
       }
 
-      const settings = await getOrCreateSettings();
-      const effectiveMode = await getEffectiveModeForDate(newDate);
+      const settings = await buildSlotSettings(newDate);
+      const effectiveMode = settings.mode;
 
       const slot = await resolveBookingSlot({
         effectiveMode,
@@ -374,7 +382,7 @@ const getTimeSlots = async (req, res, next) => {
     }
 
     const { dayStart, dayEnd } = getDayRange(date);
-    const settings = await getOrCreateSettings();
+    const settings = await buildSlotSettings(date);
 
     const allSlots = generateTimeSlots(
       { from: settings.workingHoursFrom, to: settings.workingHoursTo },
@@ -603,8 +611,8 @@ const adminUpdateBooking = async (req, res, next) => {
 
     if (slotFieldsChanged && typeof turn !== "number") {
       // لو الأدمن مش بيحدد رقم الدور يدوي، بنحسبه زي العميل بالظبط
-      const settings = await getOrCreateSettings();
-      const effectiveMode = await getEffectiveModeForDate(newDate);
+      const settings = await buildSlotSettings(newDate);
+      const effectiveMode = settings.mode;
       const slot = await resolveBookingSlot({
         effectiveMode,
         employee: newEmployee,
@@ -722,7 +730,7 @@ const getQueueCount = async (req, res, next) => {
       status: { $ne: "cancelled" },
     });
 
-    const settings = await getOrCreateSettings();
+    const settings = await buildSlotSettings(date);
     const isFull = settings.queueLimitEnabled && count >= settings.queueLimit;
 
     res.status(200).json({
