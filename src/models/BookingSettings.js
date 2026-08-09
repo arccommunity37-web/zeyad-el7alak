@@ -8,6 +8,12 @@ const mongoose = require("mongoose");
 
 const bookingSettingsSchema = new mongoose.Schema(
   {
+    // مفتاح عام يقفل الحجز في المحل بالكامل لكل الأيام - له الأولوية فوق أي إعداد يوم مخصص
+    // لو true، مفيش أي حجز جديد يقدر يتعمل في أي يوم خالص لحد ما الأدمن يفتحه تاني
+    isShopClosed: {
+      type: Boolean,
+      default: false,
+    },
     // طريقة الحجز المستخدمة في المحل كله دلوقتي
     mode: {
       type: String,
@@ -45,11 +51,6 @@ const bookingSettingsSchema = new mongoose.Schema(
       type: Number,
       default: 30,
       min: [5, "مدة الحجز لازم تكون 5 دقايق على الأقل"],
-    },
-    // هل الحجز متوقف اليوم؟ (لو الأدمن وقفه يدويا)
-    isBookingPaused: {
-      type: Boolean,
-      default: false,
     },
   },
   { timestamps: true }

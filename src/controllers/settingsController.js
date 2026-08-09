@@ -33,8 +33,10 @@ const getEffectiveSettingsForDate = async (date) => {
   const globalSettings = await getOrCreateSettings();
 
   return {
+    // ✋ المفتاح العام (isShopClosed) له الأولوية القصوى: لو المحل مقفول عمومًا،
+    // كل يوم بيبقى مقفول تلقائيًا حتى لو كان ليه إعداد "مفتوح" خاص بيه
     mode: override?.mode ?? globalSettings.mode,
-    isClosed: override?.isClosed ?? false,
+    isClosed: globalSettings.isShopClosed || (override?.isClosed ?? false),
     queueLimitEnabled: override?.queueLimitEnabled ?? globalSettings.queueLimitEnabled,
     queueLimit: override?.queueLimit ?? globalSettings.queueLimit,
     workingHoursFrom: override?.workingHoursFrom ?? globalSettings.workingHoursFrom,
@@ -76,6 +78,7 @@ const updateBookingSettings = async (req, res, next) => {
     const settings = await getOrCreateSettings();
 
     const {
+      isShopClosed,
       mode,
       queueLimitEnabled,
       queueLimit,
@@ -85,6 +88,7 @@ const updateBookingSettings = async (req, res, next) => {
       slotDurationMinutes,
     } = req.body;
 
+    if (typeof isShopClosed === "boolean") settings.isShopClosed = isShopClosed;
     if (mode) settings.mode = mode;
     if (typeof queueLimitEnabled === "boolean") settings.queueLimitEnabled = queueLimitEnabled;
     if (typeof queueLimit === "number") settings.queueLimit = queueLimit;
