@@ -42,11 +42,9 @@ const generateTimeSlots = (workingHours, slotDurationMinutes) => {
 };
 
 // بترجع كل الإعدادات المطلوبة ليوم معين في كائن واحد (تدمج بين استثناء اليوم والإعداد العام)
-// waitingListCapacity لسه إعداد عام بس (مش بيتخصص لكل يوم)
 const buildSlotSettings = async (date) => {
   const effective = await getEffectiveSettingsForDate(date);
-  const globalSettings = await getOrCreateSettings();
-  return { ...effective, waitingListCapacity: globalSettings.waitingListCapacity };
+  return effective;
 };
 
 const findOrCreateCustomer = async (customerName, customerPhone) => {
