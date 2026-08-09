@@ -8,7 +8,7 @@ const Booking = require("../models/Booking");
 const Service = require("../models/Service");
 const Customer = require("../models/Customer");
 const User = require("../models/User");
-const { getOrCreateSettings, getEffectiveModeForDate } = require("./settingsController");
+const { getOrCreateSettings, getEffectiveModeForDate, isDateClosed } = require("./settingsController");
 
 const timeToMinutes = (time) => {
   const [hours, minutes] = time.split(":").map(Number);
@@ -202,6 +202,12 @@ const createBooking = async (req, res, next) => {
       return next(new Error("الاسم ورقم التليفون مطلوبين"));
     }
 
+    // ✋ لو اليوم ده مقفول بالكامل، نرفض الحجز فورًا قبل أي حاجة تانية
+    if (await isDateClosed(date)) {
+      res.status(403);
+      return next(new Error("اليوم ده مقفول، اختار يوم تاني"));
+    }
+
     const customer = await findOrCreateCustomer(customerName, customerPhone);
 
     const selectedServices = await Service.find({ _id: { $in: services } });
@@ -274,6 +280,12 @@ const customerUpdateBooking = async (req, res, next) => {
       Boolean(employee) || Boolean(date) || Boolean(startTime) || Boolean(waitingPosition);
 
     if (dateOrSlotChanged) {
+      // ✋ لو غيّر اليوم لواحد مقفول، نرفض التعديل
+      if (date && (await isDateClosed(newDate))) {
+        res.status(403);
+        return next(new Error("اليوم ده مقفول، اختار يوم تاني"));
+      }
+
       const settings = await getOrCreateSettings();
       const effectiveMode = await getEffectiveModeForDate(newDate);
 
@@ -345,6 +357,11 @@ const getTimeSlots = async (req, res, next) => {
   try {
     const { employee, date } = req.query;
 
+    // ✋ لو اليوم مقفول بالكامل، نرجع فاضي على طول
+    if (await isDateClosed(date)) {
+      return res.status(200).json({ isDayOff: true, isClosed: true, slots: [], waitingList: [] });
+    }
+
     const employeeDoc = await User.findById(employee);
     if (!employeeDoc) {
       res.status(404);
@@ -353,7 +370,7 @@ const getTimeSlots = async (req, res, next) => {
 
     const weekday = getWeekdayName(date);
     if (employeeDoc.workingHours.daysOff.includes(weekday)) {
-      return res.status(200).json({ isDayOff: true, slots: [], waitingList: [] });
+      return res.status(200).json({ isDayOff: true, isClosed: false, slots: [], waitingList: [] });
     }
 
     const { dayStart, dayEnd } = getDayRange(date);
@@ -391,7 +408,7 @@ const getTimeSlots = async (req, res, next) => {
       waitingList.push({ position: i, status: bookedPositions.has(i) ? "booked" : "available" });
     }
 
-    res.status(200).json({ isDayOff: false, slots, waitingList });
+    res.status(200).json({ isDayOff: false, isClosed: false, slots, waitingList });
   } catch (error) {
     next(error);
   }
@@ -656,6 +673,19 @@ const bulkDeleteBookings = async (req, res, next) => {
 const getQueueCount = async (req, res, next) => {
   try {
     const { employee, date } = req.query;
+
+    // ✋ لو اليوم مقفول بالكامل، نرجع "مليان" فورًا عشان الفرونت يمنع الحجز
+    if (await isDateClosed(date)) {
+      return res.status(200).json({
+        currentQueueCount: 0,
+        nextTurn: null,
+        isFull: true,
+        isClosed: true,
+        queueLimitEnabled: false,
+        queueLimit: null,
+      });
+    }
+
     const { dayStart, dayEnd } = getDayRange(date);
 
     const count = await Booking.countDocuments({
@@ -671,6 +701,7 @@ const getQueueCount = async (req, res, next) => {
       currentQueueCount: count,
       nextTurn: count + 1,
       isFull,
+      isClosed: false,
       queueLimitEnabled: settings.queueLimitEnabled,
       queueLimit: settings.queueLimit,
     });
