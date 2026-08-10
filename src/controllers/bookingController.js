@@ -14,9 +14,14 @@ const timeToMinutes = (time) => {
   const [hours, minutes] = time.split(":").map(Number);
   return hours * 60 + minutes;
 };
+
+// 🔧 إصلاح: بنلف (mod) على 24 ساعة قبل التنسيق، عشان لو دخلنا totalMinutes >= 1440
+// (زي حالة شيفت بيعدي منتصف الليل) يطلع لنا وقت صحيح (مثلاً "24:30" تتحول لـ "00:30")
+// بدل ما يطلع رقم ساعات غير منطقي
 const minutesToTime = (totalMinutes) => {
-  const hours = Math.floor(totalMinutes / 60).toString().padStart(2, "0");
-  const minutes = (totalMinutes % 60).toString().padStart(2, "0");
+  const normalized = ((totalMinutes % (24 * 60)) + 24 * 60) % (24 * 60);
+  const hours = Math.floor(normalized / 60).toString().padStart(2, "0");
+  const minutes = (normalized % 60).toString().padStart(2, "0");
   return `${hours}:${minutes}`;
 };
 
@@ -30,10 +35,21 @@ const getDayRange = (date) => {
 
 const getWeekdayName = (date) => new Date(date).toLocaleDateString("en-US", { weekday: "long" });
 
+// 🔧 إصلاح: لو وقت الانتهاء أصغر من (أو يساوي) وقت البداية، معنى كده إن الشيفت
+// بيعدي منتصف الليل (مثلاً من 13:00 لـ 01:00) - فبنضيف 24 ساعة لوقت الانتهاء
+// عشان تفضل الحلقة (while) شغالة وتولّد الـ slots الصحيحة، وبعدين بنلف كل slot
+// برضو على 24 ساعة عشان يتعرض بشكل وقت صحيح (00:00, 00:30, ...)
 const generateTimeSlots = (workingHours, slotDurationMinutes) => {
   const slots = [];
-  let cursor = timeToMinutes(workingHours.from);
-  const end = timeToMinutes(workingHours.to);
+  const start = timeToMinutes(workingHours.from);
+  let end = timeToMinutes(workingHours.to);
+
+  // الشيفت بيعدي منتصف الليل
+  if (end <= start) {
+    end += 24 * 60;
+  }
+
+  let cursor = start;
   while (cursor + slotDurationMinutes <= end) {
     slots.push(minutesToTime(cursor));
     cursor += slotDurationMinutes;
@@ -120,6 +136,7 @@ const resolveBookingSlot = async ({
         throw err;
       }
       // بنحسب وقت النهاية = وقت البداية + مدة الحجز الحالية لليوم ده، ونخزنه ثابت
+      // (minutesToTime بقت بتلف على 24 ساعة تلقائيًا لو الجمع عدى منتصف الليل)
       const endTime = minutesToTime(timeToMinutes(startTime) + settings.slotDurationMinutes);
       return { turn: null, startTime, endTime, isWaiting: false, waitingPosition: null };
     }
@@ -747,7 +764,7 @@ const getQueueCount = async (req, res, next) => {
   try {
     const { employee, date } = req.query;
 
-    // ✋ لو اليوم مقفول بالكامل، نرجع "مليان" فورًا عشان الفرونت يمنع الحجز
+    // ✋ لو اليوم ده مقفول بالكامل، نرجع "مليان" فورًا عشان الفرونت يمنع الحجز
     if (await isDateClosed(date)) {
       return res.status(200).json({
         currentQueueCount: 0,
