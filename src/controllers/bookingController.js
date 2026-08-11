@@ -108,7 +108,17 @@ const resolveBookingSlot = async ({
     }
 
     // 2. حساب الدور المستقل الخاص بهذه الخدمة فقط
-    const serviceFilter = (services && services.length > 0) ? { services: { $in: services } } : {};
+    const rawIds = Array.isArray(services) ? services : (services ? [services] : []);
+    const cleanServiceIds = rawIds.map(s => {
+      if (!s) return null;
+      if (typeof s === "object") return (s._id || s.id || s).toString();
+      return s.toString();
+    }).filter(Boolean);
+
+    const serviceFilter = cleanServiceIds.length > 0
+      ? { $or: [{ services: { $in: cleanServiceIds } }, { service: { $in: cleanServiceIds } }] }
+      : {};
+
     const serviceBookingsCountToday = await Booking.countDocuments({
       employee,
       date: { $gte: dayStart, $lte: dayEnd },
@@ -586,8 +596,16 @@ const lookupBookingsByPhone = async (req, res, next) => {
         const { dayStart, dayEnd } = getDayRange(booking.date);
         const employeeId = booking.employee?._id || booking.employee;
 
-        const serviceIds = (booking.services || []).map(s => s._id || s);
-        const serviceFilter = serviceIds.length > 0 ? { services: { $in: serviceIds } } : {};
+        const rawServices = booking.services || (booking.service ? [booking.service] : []);
+        const cleanServiceIds = rawServices.map(s => {
+          if (!s) return null;
+          if (typeof s === "object") return (s._id || s.id || s).toString();
+          return s.toString();
+        }).filter(Boolean);
+
+        const serviceFilter = cleanServiceIds.length > 0
+          ? { $or: [{ services: { $in: cleanServiceIds } }, { service: { $in: cleanServiceIds } }] }
+          : {};
 
         const peopleAhead = await Booking.countDocuments({
           employee: employeeId,
