@@ -1,7 +1,7 @@
 // ==========================================
 // الكنترولر ده مسؤول عن الحجوزات - بيدعم وضعين حسب "طريقة الحجز الفعلية لليوم المطلوب"
 // وبيدي العميل صلاحية يعدل/يلغي حجزه بنفسه (برقم تليفونه + كلمة سر اختيارية لو حطها)
-// والأدمن صلاحية كاملة يعدل/يمسح/يفلتر أي حجز
+// والأدمن صلاحية كاملة يعدل/يمسح/يفلتر أي حجز 
 // ==========================================
 
 const Booking = require("../models/Booking");
@@ -83,6 +83,7 @@ const resolveBookingSlot = async ({
   effectiveMode,
   employee,
   date,
+  services,
   settings,
   startTime,
   waitingPosition,
@@ -92,6 +93,7 @@ const resolveBookingSlot = async ({
   const excludeClause = excludeBookingId ? { _id: { $ne: excludeBookingId } } : {};
 
   if (effectiveMode === "queue") {
+    // 1. إجمالي عدد الحجوزات لليوم لجميع الخدمات (للتحقق من السعة الإجمالية لليوم)
     const bookingsCountToday = await Booking.countDocuments({
       employee,
       date: { $gte: dayStart, $lte: dayEnd },
@@ -105,8 +107,18 @@ const resolveBookingSlot = async ({
       throw err;
     }
 
+    // 2. حساب الدور المستقل الخاص بهذه الخدمة فقط
+    const serviceFilter = (services && services.length > 0) ? { services: { $in: services } } : {};
+    const serviceBookingsCountToday = await Booking.countDocuments({
+      employee,
+      date: { $gte: dayStart, $lte: dayEnd },
+      status: { $ne: "cancelled" },
+      ...serviceFilter,
+      ...excludeClause,
+    });
+
     return {
-      turn: bookingsCountToday + 1,
+      turn: serviceBookingsCountToday + 1,
       startTime: null,
       endTime: null,
       isWaiting: false,
@@ -255,6 +267,7 @@ const createBooking = async (req, res, next) => {
       effectiveMode,
       employee,
       date,
+      services,
       settings,
       startTime,
       waitingPosition,
@@ -336,6 +349,7 @@ const customerUpdateBooking = async (req, res, next) => {
         effectiveMode,
         employee: newEmployee,
         date: newDate,
+        services: services || booking.services,
         settings,
         startTime: finalStartTime,
         waitingPosition: finalWaitingPosition,
@@ -572,10 +586,14 @@ const lookupBookingsByPhone = async (req, res, next) => {
         const { dayStart, dayEnd } = getDayRange(booking.date);
         const employeeId = booking.employee?._id || booking.employee;
 
+        const serviceIds = (booking.services || []).map(s => s._id || s);
+        const serviceFilter = serviceIds.length > 0 ? { services: { $in: serviceIds } } : {};
+
         const peopleAhead = await Booking.countDocuments({
           employee: employeeId,
           date: { $gte: dayStart, $lte: dayEnd },
           turn: { $lt: booking.turn },
+          ...serviceFilter,
           status: { $nin: ["completed", "cancelled"] },
         });
 
@@ -664,6 +682,7 @@ const adminUpdateBooking = async (req, res, next) => {
         effectiveMode,
         employee: newEmployee,
         date: newDate,
+        services: services || booking.services,
         settings,
         startTime: finalStartTime,
         waitingPosition: finalWaitingPosition,
