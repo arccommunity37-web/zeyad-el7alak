@@ -32,11 +32,13 @@ const getEffectiveSettingsForDate = async (date) => {
   const override = await DayModeOverride.findOne({ dateKey });
   const globalSettings = await getOrCreateSettings();
 
+  const isClosedGlobally = Boolean(globalSettings.isShopClosed);
+
   return {
-    // ✋ المفتاح العام (isShopClosed) له الأولوية القصوى: لو المحل مقفول عمومًا،
-    // كل يوم بيبقى مقفول تلقائيًا حتى لو كان ليه إعداد "مفتوح" خاص بيه
     mode: override?.mode ?? globalSettings.mode,
-    isClosed: globalSettings.isShopClosed || (override?.isClosed ?? false),
+    isClosed: isClosedGlobally || (override?.isClosed ?? false),
+    isShopClosed: isClosedGlobally,
+    isBookingPaused: isClosedGlobally,
     queueLimitEnabled: override?.queueLimitEnabled ?? globalSettings.queueLimitEnabled,
     queueLimit: override?.queueLimit ?? globalSettings.queueLimit,
     waitingListCapacity: override?.waitingListCapacity ?? globalSettings.waitingListCapacity,
@@ -64,7 +66,9 @@ const isDateClosed = async (date) => {
 const getBookingSettings = async (req, res, next) => {
   try {
     const settings = await getOrCreateSettings();
-    res.status(200).json(settings);
+    const settingsObj = settings.toObject();
+    settingsObj.isBookingPaused = settingsObj.isShopClosed;
+    res.status(200).json(settingsObj);
   } catch (error) {
     next(error);
   }
@@ -80,6 +84,7 @@ const updateBookingSettings = async (req, res, next) => {
 
     const {
       isShopClosed,
+      isBookingPaused,
       mode,
       queueLimitEnabled,
       queueLimit,
@@ -89,7 +94,8 @@ const updateBookingSettings = async (req, res, next) => {
       slotDurationMinutes,
     } = req.body;
 
-    if (typeof isShopClosed === "boolean") settings.isShopClosed = isShopClosed;
+    const closedVal = isShopClosed !== undefined ? isShopClosed : isBookingPaused;
+    if (typeof closedVal === "boolean") settings.isShopClosed = closedVal;
     if (mode) settings.mode = mode;
     if (typeof queueLimitEnabled === "boolean") settings.queueLimitEnabled = queueLimitEnabled;
     if (typeof queueLimit === "number") settings.queueLimit = queueLimit;
@@ -99,7 +105,10 @@ const updateBookingSettings = async (req, res, next) => {
     if (typeof slotDurationMinutes === "number") settings.slotDurationMinutes = slotDurationMinutes;
 
     await settings.save();
-    res.status(200).json(settings);
+
+    const settingsObj = settings.toObject();
+    settingsObj.isBookingPaused = settingsObj.isShopClosed;
+    res.status(200).json(settingsObj);
   } catch (error) {
     next(error);
   }
