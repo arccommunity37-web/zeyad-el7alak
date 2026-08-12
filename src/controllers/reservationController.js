@@ -110,7 +110,11 @@ const lookupReservationsByPhone = async (req, res, next) => {
       return next(new Error("رقم التليفون مطلوب"));
     }
 
-    const reservations = await ProductReservation.find({ customerPhone: phone })
+    // نُرجع فقط الحجوزات النشطة (قيد الانتظار أو مؤكدة) — المكتملة والملغية مش لازمها تظهر للعميل
+    const reservations = await ProductReservation.find({
+      customerPhone: phone,
+      status: { $in: ["pending", "confirmed"] },
+    })
       .populate("product", "name sellingPrice image")
       .sort({ createdAt: -1 });
 
