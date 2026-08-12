@@ -71,8 +71,23 @@ const createReservation = async (req, res, next) => {
 // ------------------------------------------
 const getReservations = async (req, res, next) => {
   try {
-    const reservations = await ProductReservation.find({})
+    const { status } = req.query;
+
+    let filter = {};
+    if (status === "active") {
+      filter = { status: { $in: ["pending", "confirmed"] } };
+    } else if (status === "delivered") {
+      filter = { status: { $in: ["completed", "picked_up"] } };
+    } else if (status === "cancelled") {
+      filter = { status: "cancelled" };
+    } else if (status === "completed") {
+      filter = { status: { $in: ["completed", "picked_up"] } };
+    }
+    // If no status param → return all (existing behaviour)
+
+    const reservations = await ProductReservation.find(filter)
       .populate("product", "name sellingPrice image")
+      .populate("customer", "name phone")
       .sort({ createdAt: -1 });
 
     res.status(200).json(reservations);
@@ -80,6 +95,7 @@ const getReservations = async (req, res, next) => {
     next(error);
   }
 };
+
 
 // ------------------------------------------
 // @desc    العميل بيشوف حجوزاته برقم تليفونه بس - Public
