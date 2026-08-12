@@ -35,7 +35,7 @@ const productReservationSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "confirmed", "picked_up", "cancelled"],
+      enum: ["pending", "confirmed", "picked_up", "completed", "cancelled"],
       default: "pending",
     },
     // المهلة اللي لو العميل ماجاش يستلم فيها، الحجز بيتلغي تلقائيًا

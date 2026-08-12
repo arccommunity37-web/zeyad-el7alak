@@ -26,10 +26,16 @@ const minutesToTime = (totalMinutes) => {
 };
 
 const getDayRange = (date) => {
-  const dayStart = new Date(date);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(date);
-  dayEnd.setHours(23, 59, 59, 999);
+  let dateStr = "";
+  if (typeof date === "string") {
+    dateStr = date.split("T")[0];
+  } else if (date instanceof Date) {
+    dateStr = date.toISOString().split("T")[0];
+  } else if (date) {
+    dateStr = new Date(date).toISOString().split("T")[0];
+  }
+  const dayStart = new Date(`${dateStr}T00:00:00.000Z`);
+  const dayEnd = new Date(`${dateStr}T23:59:59.999Z`);
   return { dayStart, dayEnd };
 };
 
@@ -93,7 +99,7 @@ const resolveBookingSlot = async ({
   const excludeClause = excludeBookingId ? { _id: { $ne: excludeBookingId } } : {};
 
   if (effectiveMode === "queue") {
-    // 1. إجمالي عدد الحجوزات لليوم لجميع الخدمات (للتحقق من السعة الإجمالية لليوم)
+    // 1. التحقق من السعة الإجمالية لليوم لجميع الخدمات مجتمعة
     const bookingsCountToday = await Booking.countDocuments({
       employee,
       date: { $gte: dayStart, $lte: dayEnd },
@@ -107,7 +113,7 @@ const resolveBookingSlot = async ({
       throw err;
     }
 
-    // 2. حساب الدور المستقل الخاص بهذه الخدمة فقط
+    // 2. حساب رقم الدور الخاص بهذه الخدمة بشكل مستقل لكل خدمة
     const rawIds = Array.isArray(services) ? services : (services ? [services] : []);
     const cleanServiceIds = rawIds.map(s => {
       if (!s) return null;
@@ -837,6 +843,111 @@ const getQueueCount = async (req, res, next) => {
   }
 };
 
+// ------------------------------------------
+// @desc    معرفة حالة الأيام لـ حلاق معين (مغلق / إجازة / مكتمل الحجز) - Public
+// @route   GET /api/bookings/days-status?employee=xxx&dates=2026-08-12,2026-08-13...
+// ------------------------------------------
+const getDaysAvailability = async (req, res, next) => {
+  try {
+    const { employee, dates } = req.query;
+    if (!employee) {
+      res.status(400);
+      return next(new Error("مطلوب معرف الحلاق employee"));
+    }
+
+    const employeeDoc = await User.findById(employee);
+    let dateList = [];
+    if (dates && typeof dates === "string") {
+      dateList = dates.split(",").map((d) => d.trim()).filter(Boolean);
+    } else {
+      const now = new Date();
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(now);
+        d.setDate(d.getDate() + i);
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        dateList.push(`${yyyy}-${mm}-${dd}`);
+      }
+    }
+
+    const result = {};
+
+    for (const dateStr of dateList) {
+      const isClosed = await isDateClosed(dateStr);
+      const settings = await buildSlotSettings(dateStr);
+      const weekday = getWeekdayName(dateStr);
+      const isDayOff = employeeDoc?.workingHours?.daysOff?.includes(weekday) ?? false;
+      const { dayStart, dayEnd } = getDayRange(dateStr);
+
+      let isFull = false;
+      let currentQueueCount = 0;
+
+      if (isClosed) {
+        isFull = true;
+      } else if (settings.mode === "queue") {
+        currentQueueCount = await Booking.countDocuments({
+          employee,
+          date: { $gte: dayStart, $lte: dayEnd },
+          status: { $ne: "cancelled" },
+        });
+        if (settings.queueLimitEnabled && currentQueueCount >= settings.queueLimit) {
+          isFull = true;
+        }
+      } else if (settings.mode === "time") {
+        if (isDayOff) {
+          isFull = false;
+        } else {
+          const allSlots = generateTimeSlots(
+            { from: settings.workingHoursFrom, to: settings.workingHoursTo },
+            settings.slotDurationMinutes
+          );
+          const bookedTimeDocs = await Booking.find({
+            employee,
+            date: { $gte: dayStart, $lte: dayEnd },
+            isWaiting: false,
+            startTime: { $ne: null },
+            status: { $ne: "cancelled" },
+          }).select("startTime");
+          const bookedTimes = new Set(bookedTimeDocs.map((b) => b.startTime));
+          const availableSlotsCount = allSlots.filter((t) => !bookedTimes.has(t)).length;
+
+          const bookedWaitingDocs = await Booking.find({
+            employee,
+            date: { $gte: dayStart, $lte: dayEnd },
+            isWaiting: true,
+            status: { $ne: "cancelled" },
+          }).select("waitingPosition");
+          const bookedPositions = new Set(bookedWaitingDocs.map((b) => b.waitingPosition));
+          let availableWaitingCount = 0;
+          for (let i = 1; i <= settings.waitingListCapacity; i++) {
+            if (!bookedPositions.has(i)) availableWaitingCount++;
+          }
+
+          if (allSlots.length > 0 && availableSlotsCount === 0 && availableWaitingCount === 0) {
+            isFull = true;
+          }
+        }
+      }
+
+      result[dateStr] = {
+        dateStr,
+        mode: settings.mode,
+        isClosed,
+        isDayOff,
+        isFull,
+        currentQueueCount,
+        queueLimitEnabled: settings.queueLimitEnabled,
+        queueLimit: settings.queueLimit,
+      };
+    }
+
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createBooking,
   customerUpdateBooking,
@@ -850,4 +961,5 @@ module.exports = {
   bulkDeleteBookings,
   getQueueCount,
   getTimeSlots,
+  getDaysAvailability,
 };

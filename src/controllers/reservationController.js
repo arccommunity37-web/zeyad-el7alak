@@ -6,6 +6,7 @@ const ProductReservation = require("../models/ProductReservation");
 const Product = require("../models/Product");
 const Customer = require("../models/Customer");
 const StockMovement = require("../models/StockMovement");
+const Sale = require("../models/Sale");
 
 // ------------------------------------------
 // @desc    العميل بيحجز منتج معين - Public
@@ -125,13 +126,38 @@ const updateReservationStatus = async (req, res, next) => {
       }
     }
 
-    if (status === "picked_up") {
+    const isDelivered = status === "picked_up" || status === "completed";
+    const wasDelivered = reservation.status === "picked_up" || reservation.status === "completed";
+
+    if (isDelivered && !wasDelivered) {
       await StockMovement.create({
         product: reservation.product,
         type: "out",
         quantity: reservation.quantity,
         reason: "استلام حجز منتج",
       });
+
+      // ⭐ تسليم المنتج بيعمل فاتورة بيع (Sale) تلقائياً عشان تظهر في شاشة المبيعات وتتحسب في الأرباح!
+      const productDoc = await Product.findById(reservation.product);
+      if (productDoc) {
+        const unitPrice = productDoc.sellingPrice || 0;
+        const subtotal = unitPrice * reservation.quantity;
+        await Sale.create({
+          customer: reservation.customer || null,
+          items: [
+            {
+              type: "product",
+              refId: productDoc._id,
+              name: productDoc.name,
+              quantity: reservation.quantity,
+              unitPrice: unitPrice,
+              subtotal: subtotal,
+            },
+          ],
+          totalAmount: subtotal,
+          paymentMethod: "cash",
+        });
+      }
     }
 
     reservation.status = status;

@@ -16,6 +16,10 @@ const connectDB = async () => {
 
     // لو الاتصال نجح، بنطبع رسالة فيها اسم السيرفر اللي اتوصلنا بيه (مفيد وقت التطوير)
     console.log(`✅ MongoDB متصلة بنجاح: ${conn.connection.host}`);
+    
+    // 🔧 تنظيف: مسح الفهرس الفريد القديم email_1 إن وجد لمنع خطأ E11000 عند إضافة حلاق بدون إيميل
+    conn.connection.collection("users").dropIndex("email_1").catch(() => {});
+
     return conn;
   } catch (error) {
     // لو حصل أي خطأ في الاتصال (مثلاً الرابط غلط أو الباسورد غلط أو الشبكة ماسمحتش)

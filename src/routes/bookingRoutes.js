@@ -17,10 +17,12 @@ const {
   bulkDeleteBookings,
   getQueueCount,
   getTimeSlots,
+  getDaysAvailability,
 } = require("../controllers/bookingController");
 const { protect } = require("../middlewares/authMiddleware");
 
 // مهم: المسارات الثابتة لازم تتحط قبل "/:id"
+router.get("/days-status", getDaysAvailability); // Public
 router.get("/queue-count", getQueueCount); // Public
 router.get("/time-slots", getTimeSlots); // Public
 router.get("/lookup", lookupBookingsByPhone); // Public
