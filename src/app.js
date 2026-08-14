@@ -49,6 +49,29 @@ app.use(compression());
 // cookieParser بيخلي إكسبريس يقدر يقرا الكوكيز اللي جاية مع الطلب (req.cookies)
 app.use(cookieParser());
 
+// ==========================================
+// Cache-Control للـ endpoints العامة اللي بتتقرأ فقط (قصات، منتجات، خدمات...)
+// ده مش بيغيّر شكل أو محتوى الرد خالص - بس بيقول للمتصفح/الشبكة:
+// "الرد ده صالح لمدة 60 ثانية، ممكن تستخدمه تاني من غير ما تسأل السيرفر"
+// وده بيقلل عدد الطلبات الفعلية اللي بتوصل للسيرفر أصلاً، خصوصًا لو
+// المستخدم رجع لنفس الصفحة تاني قريب. الـ endpoints اللي بتضيف/تعدل بيانات
+// (POST/PUT/DELETE) أو صفحات الأدمن متأثرتش خالص بالتعديل ده.
+// ==========================================
+const PUBLIC_CACHEABLE_PATHS = [
+  "/api/styles",
+  "/api/products",
+  "/api/services",
+  "/api/contact-links",
+  "/api/announcements/active",
+];
+
+app.use((req, res, next) => {
+  if (req.method === "GET" && PUBLIC_CACHEABLE_PATHS.some((p) => req.path.startsWith(p))) {
+    res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+  }
+  next();
+});
+
 // express.json() بيخلي إكسبريس يفهم البيانات اللي جاية بصيغة JSON في body الطلب
 app.use(express.json());
 
