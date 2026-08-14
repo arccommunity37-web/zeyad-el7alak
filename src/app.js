@@ -7,6 +7,7 @@ const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
 const cookieParser = require("cookie-parser");
+const compression = require("compression");
 
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
@@ -39,6 +40,11 @@ app.use(
     credentials: true,
   })
 );
+
+// compression بيضغط أي رد (JSON، HTML...) قبل ما يتبعت للمتصفح
+// من غير ما يغيّر شكل أو محتوى الرد نفسه - بس بيقلل حجم النقل (أحيانًا 70%+)
+// لازم يتحط بدري في السلسلة عشان يضغط كل حاجة بتتبعت بعده
+app.use(compression());
 
 // cookieParser بيخلي إكسبريس يقدر يقرا الكوكيز اللي جاية مع الطلب (req.cookies)
 app.use(cookieParser());
