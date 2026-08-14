@@ -3,32 +3,8 @@
 // والعميل يقدر يتصفحها قبل ما يحجز عشان يختار الشكل اللي عاجبه
 // ==========================================
 
-const stream = require("stream");
 const HaircutStyle = require("../models/HaircutStyle");
-const cloudinary = require("../config/cloudinary");
-
-// ------------------------------------------
-// دالة مساعدة داخلية: بتاخد الصورة (buffer) من الذاكرة وترفعها على Cloudinary
-// وترجع رابط الصورة + الـ public_id بتاعها (مهم لو حبينا نمسحها بعدين)
-// بنستخدم "stream" عشان multer بيحط الصورة في الذاكرة كـ buffer، مش كملف فعلي على القرص
-// ------------------------------------------
-const uploadBufferToCloudinary = (buffer, folder) => {
-  return new Promise((resolve, reject) => {
-    // بننشئ "أنبوبة رفع" (upload_stream) بتستقبل البيانات وتبعتها لـ Cloudinary
-    const uploadStream = cloudinary.uploader.upload_stream(
-      { folder }, // بنحط الصور في فولدر معين على Cloudinary عشان تكون منظمة (مثلاً "barbershop/styles")
-      (error, result) => {
-        if (error) return reject(error);
-        resolve(result); // result فيه secure_url و public_id وحاجات تانية
-      }
-    );
-
-    // بنحول الـ buffer لـ stream عشان نقدر "نضخه" جوه uploadStream
-    const bufferStream = new stream.PassThrough();
-    bufferStream.end(buffer);
-    bufferStream.pipe(uploadStream);
-  });
-};
+const { uploadImage } = require("../utils/uploadImage");
 
 // ------------------------------------------
 // @desc    عرض كل قصات الشعر المتاحة (Public)
@@ -61,12 +37,9 @@ const createStyle = async (req, res, next) => {
       return next(new Error("لازم ترفع صورة واحدة على الأقل للقصة"));
     }
 
-    // بنرفع كل صورة على حدة على Cloudinary، وبننتظر لحد ما كل الصور تخلص رفع
+    // بنرفع كل صورة على حدة (بعد ضغطها) على Cloudinary، وبننتظر لحد ما كل الصور تخلص رفع
     const uploadedImages = await Promise.all(
-      req.files.map(async (file) => {
-        const result = await uploadBufferToCloudinary(file.buffer, "barbershop/styles");
-        return { url: result.secure_url, publicId: result.public_id };
-      })
+      req.files.map((file) => uploadImage(file.buffer, "barbershop/styles"))
     );
 
     const style = await HaircutStyle.create({
@@ -100,10 +73,7 @@ const addImageToStyle = async (req, res, next) => {
     }
 
     const uploadedImages = await Promise.all(
-      req.files.map(async (file) => {
-        const result = await uploadBufferToCloudinary(file.buffer, "barbershop/styles");
-        return { url: result.secure_url, publicId: result.public_id };
-      })
+      req.files.map((file) => uploadImage(file.buffer, "barbershop/styles"))
     );
 
     // بنضيف الصور الجديدة فوق القديمة، مش بنستبدلها

@@ -3,23 +3,10 @@
 // إضافة كمية جديدة (stock-in)، وعرض المنتجات اللي قربت تخلص
 // ==========================================
 
-const stream = require("stream");
 const Product = require("../models/Product");
 const StockMovement = require("../models/StockMovement");
 const cloudinary = require("../config/cloudinary");
-
-// دالة رفع الصورة - نفس الفكرة المستخدمة في styleController
-const uploadBufferToCloudinary = (buffer, folder) => {
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream({ folder }, (error, result) => {
-      if (error) return reject(error);
-      resolve(result);
-    });
-    const bufferStream = new stream.PassThrough();
-    bufferStream.end(buffer);
-    bufferStream.pipe(uploadStream);
-  });
-};
+const { uploadImage } = require("../utils/uploadImage");
 
 // ------------------------------------------
 // @desc    عرض كل المنتجات
@@ -54,9 +41,9 @@ const createProduct = async (req, res, next) => {
     let image = { url: "", publicId: "" };
 
     // لو المنتج اتبعت معاه صورة وقت الإنشاء (req.file من multer)
+    // بتتضغط تلقائيًا جوه uploadImage قبل ما تترفع - تصغير الحجم بيسرّع الرفع
     if (req.file) {
-      const result = await uploadBufferToCloudinary(req.file.buffer, "barbershop/products");
-      image = { url: result.secure_url, publicId: result.public_id };
+      image = await uploadImage(req.file.buffer, "barbershop/products");
     }
 
     const product = await Product.create({
@@ -134,8 +121,7 @@ const updateProductImage = async (req, res, next) => {
       await cloudinary.uploader.destroy(product.image.publicId);
     }
 
-    const result = await uploadBufferToCloudinary(req.file.buffer, "barbershop/products");
-    product.image = { url: result.secure_url, publicId: result.public_id };
+    product.image = await uploadImage(req.file.buffer, "barbershop/products");
     await product.save();
 
     res.status(200).json(product);

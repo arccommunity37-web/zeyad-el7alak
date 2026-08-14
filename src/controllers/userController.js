@@ -2,22 +2,9 @@
 // الكنترولر ده مسؤول عن إدارة الموظفين (الحلاقين) من قبل الأدمن
 // ==========================================
 
-const stream = require("stream");
 const User = require("../models/User");
 const cloudinary = require("../config/cloudinary");
-
-// دالة رفع الصورة على Cloudinary - نفس الفكرة المستخدمة في باقي الكنترولرز
-const uploadBufferToCloudinary = (buffer, folder) => {
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream({ folder }, (error, result) => {
-      if (error) return reject(error);
-      resolve(result);
-    });
-    const bufferStream = new stream.PassThrough();
-    bufferStream.end(buffer);
-    bufferStream.pipe(uploadStream);
-  });
-};
+const { uploadImage } = require("../utils/uploadImage");
 
 // ------------------------------------------
 // @desc    عرض قايمة الحلاقين المتاحين (Public) - العميل يحتاجها وقت اختيار الحلاق في صفحة الحجز
@@ -118,8 +105,7 @@ const updateUserImage = async (req, res, next) => {
       await cloudinary.uploader.destroy(user.image.publicId);
     }
 
-    const result = await uploadBufferToCloudinary(req.file.buffer, "barbershop/employees");
-    user.image = { url: result.secure_url, publicId: result.public_id };
+    user.image = await uploadImage(req.file.buffer, "barbershop/employees");
     await user.save();
 
     res.status(200).json(user);

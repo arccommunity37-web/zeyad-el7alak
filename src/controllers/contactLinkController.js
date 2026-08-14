@@ -2,21 +2,9 @@
 // الكنترولر ده مسؤول عن لينكات/أرقام التواصل اللي الأدمن بيضيفها (جروب، إنستا باي...)
 // ==========================================
 
-const stream = require("stream");
 const ContactLink = require("../models/ContactLink");
 const cloudinary = require("../config/cloudinary");
-
-const uploadBufferToCloudinary = (buffer, folder) => {
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream({ folder }, (error, result) => {
-      if (error) return reject(error);
-      resolve(result);
-    });
-    const bufferStream = new stream.PassThrough();
-    bufferStream.end(buffer);
-    bufferStream.pipe(uploadStream);
-  });
-};
+const { uploadImage } = require("../utils/uploadImage");
 
 // ------------------------------------------
 // @desc    عرض كل اللينكات المفعّلة (مرتبة حسب order) - Public
@@ -42,8 +30,7 @@ const createContactLink = async (req, res, next) => {
 
     let image = { url: "", publicId: "" };
     if (req.file) {
-      const result = await uploadBufferToCloudinary(req.file.buffer, "barbershop/contact-links");
-      image = { url: result.secure_url, publicId: result.public_id };
+      image = await uploadImage(req.file.buffer, "barbershop/contact-links");
     }
 
     const link = await ContactLink.create({
@@ -84,8 +71,7 @@ const updateContactLink = async (req, res, next) => {
       if (link.image && link.image.publicId) {
         await cloudinary.uploader.destroy(link.image.publicId);
       }
-      const result = await uploadBufferToCloudinary(req.file.buffer, "barbershop/contact-links");
-      link.image = { url: result.secure_url, publicId: result.public_id };
+      link.image = await uploadImage(req.file.buffer, "barbershop/contact-links");
     }
 
     await link.save();
