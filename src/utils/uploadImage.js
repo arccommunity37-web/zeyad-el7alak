@@ -56,11 +56,6 @@ const uploadBufferToCloudinary = (buffer, folder) => {
 //
 // لو الضغط فشل لأي سبب (صورة تالفة مثلاً)، بنرفع الصورة الأصلية زي ما هي
 // بدل ما نوقف العملية بالكامل - أهم حاجة إن المستخدم ميقفش عالق
-//
-// الرابط اللي بيترجع دلوقتي محسّن تلقائيًا للعرض (f_auto,q_auto):
-// - fetch_format: "auto" -> Cloudinary بيختار الصيغة الأفضل حسب المتصفح (WebP/AVIF بدل JPEG)
-// - quality: "auto"      -> أفضل جودة ممكنة بأقل حجم حسب محتوى الصورة نفسها
-// من غير ما نرفع أي نسخة إضافية أو نغيّر أي حاجة في الملف الأصلي المخزّن على Cloudinary
 // ------------------------------------------
 const uploadImage = async (buffer, folder, options = {}) => {
   let bufferToUpload = buffer;
@@ -73,14 +68,7 @@ const uploadImage = async (buffer, folder, options = {}) => {
   }
 
   const result = await uploadBufferToCloudinary(bufferToUpload, folder);
-
-  const optimizedUrl = cloudinary.url(result.public_id, {
-    secure: true,
-    fetch_format: "auto",
-    quality: "auto",
-  });
-
-  return { url: optimizedUrl, publicId: result.public_id };
+  return { url: result.secure_url, publicId: result.public_id };
 };
 
 module.exports = { uploadImage, compressImageBuffer, uploadBufferToCloudinary };
